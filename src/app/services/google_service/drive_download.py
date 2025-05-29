@@ -36,7 +36,7 @@ def download_files(file_names):
     try:
         with open(CREDENTIALS_PATH, 'r') as cred_file:
             credentials_data = json.load(cred_file)
-        folder_id = credentials_data.get('folder_id')
+        folder_id = credentials_data.get('folder_id').get('folder_id', None)
         if not folder_id:
             raise ValueError("Missing 'folder_id' in credentials file.")
     except Exception as e:
@@ -92,15 +92,14 @@ def download_files(file_names):
 
             downloaded_files.append(local_path)
 
-            return {"status": True, "files": downloaded_files}
-
         except Exception as e:
             logging.error("Failed to download '%s': %s", file_name, e)
-            return {"status": False, "files": {}}
+        
+    return {"status": bool(download_files), "files": downloaded_files}
 
 
 if __name__ == '__main__':
-    files_to_download = ['requirements.txt']  # Replace with your target filenames
+    files_to_download = ["symfonyUpgrade.txt","symfonySetup.txt", "symfonyFundamentals.txt", "symfonyDoctrine.txt", "symfonyDoc.txt"] # Replace with your target filenames
     result = download_files(files_to_download)
 
     if result['status']:

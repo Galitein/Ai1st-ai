@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException
 
-from src.app.services.google_service import google_oauth, drive_upload, file_list
+from src.app.services.google_service import (
+    google_oauth, 
+    drive_upload, 
+    file_list, 
+    drive_download
+)
 # from src.app.models.google_models import UploadFile
 router = APIRouter()
 
@@ -30,7 +35,7 @@ async def upload_file(file_names: list[str]):
     Returns:
         dict: A dictionary containing the file ID of the uploaded file.
     """
-    uploaded_files = drive_upload.upload_file(file_names)
+    uploaded_files = drive_upload.upload_files(file_names)
     return {"uploaded_files": uploaded_files}
 
 
@@ -46,3 +51,19 @@ async def list_files():
     if not response.get("status"):
         raise HTTPException(status_code=400, detail="Failed to list files")
     return response
+
+@router.post("/download")
+async def download_files(file_names: list[str]):
+    """
+    Downloads specified files from Google Drive.
+    
+    Args:
+        file_names (list): List of filenames to download.
+    
+    Returns:
+        dict: A dictionary containing the status and list of downloaded files.
+    """
+    downloaded_files = drive_download.download_files(file_names)
+    if not downloaded_files.get("status"):
+        raise HTTPException(status_code=400, detail="Failed to download files")
+    return downloaded_files

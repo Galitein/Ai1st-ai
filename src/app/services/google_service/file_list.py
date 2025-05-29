@@ -19,7 +19,7 @@ def list_files_in_folder():
     try:
         with open(credentials_path, 'r') as cred_file:
             credentials_data = json.load(cred_file)
-        folder_id = credentials_data.get('folder_id', None)
+        folder_id = credentials_data.get('folder_id', None).get('folder_id', None)
     except FileNotFoundError:
         logging.error("Credentials file not found at: %s", credentials_path)
         return {"status": False, "files": []}

@@ -36,7 +36,7 @@ def upload_files(file_names):
     try:
         with open(CREDENTIALS_PATH, 'r') as f:
             cred_data = json.load(f)
-        folder_id = cred_data.get('folder_id')
+        folder_id = cred_data.get('folder_id').get('folder_id')
         if not folder_id:
             raise ValueError("Missing 'folder_id' in token.json.")
     except Exception as e:
