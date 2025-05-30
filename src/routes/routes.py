@@ -6,7 +6,11 @@ from src.app.services.google_service import (
     file_list, 
     drive_download
 )
-# from src.app.models.google_models import UploadFile
+from src.app.services.text_service import (
+    create_embeddings, 
+    text_search
+)
+
 router = APIRouter()
 
 @router.get("/")
@@ -67,3 +71,41 @@ async def download_files(file_names: list[str]):
     if not downloaded_files.get("status"):
         raise HTTPException(status_code=400, detail="Failed to download files")
     return downloaded_files
+
+@router.post("/build_index")
+async def build_index_route(file_names: list[str]):
+    """
+    Builds an index from the given list of file names.
+
+    Args:
+        file_names (list): List of file names to process.
+
+    Returns:
+        dict: A dictionary containing the status and index details.
+    """
+    response = create_embeddings.process_and_build_index(file_names)
+    if not response.get("status"):
+        raise HTTPException(status_code=400, detail=response.get("message"))
+    return response
+
+
+@router.post("/search")
+async def search_route(query: str):
+    """
+    Searches the index for the given query and returns ranked results.
+
+    Args:
+        query (str): The search query.
+
+    Returns:
+        list: A list of ranked search results.
+    """
+    index = text_search.load_index()
+    if not index:
+        raise HTTPException(status_code=400, detail="Failed to load the index.")
+    
+    results = text_search.ranksearch(index, query)
+    if not results:
+        raise HTTPException(status_code=400, detail="No results found.")
+    
+    return {"query": query, "results": results}

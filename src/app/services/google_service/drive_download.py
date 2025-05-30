@@ -85,6 +85,7 @@ def download_files(file_names):
 
             # Save to local directory
             file_content.seek(0)
+            print(file_content.read().decode('utf-8'))
             local_path = os.path.join(DOWNLOAD_PATH, file_name)
             with open(local_path, 'wb') as f:
                 f.write(file_content.read())
