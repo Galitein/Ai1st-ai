@@ -8,19 +8,19 @@ from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.credentials import Credentials
 
 from txtai import Embeddings
-from txtai.pipeline import Similarity
 
 import torch
+from dotenv import load_dotenv
 import nltk
 nltk.download('punkt')
 
-DATA_DIR = "downloads"  # Directory containing text files
-INDEX_DIR = "index"
-CHUNK_BY = "paragraphs"  # or "sentences"
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-CREDENTIALS_PATH = "src/app/utils/token.json"
-SCOPES = ['https://www.googleapis.com/auth/drive']
-similarity = Similarity("valhalla/distilbart-mnli-12-3")
+load_dotenv()
+
+DATA_DIR = os.getenv("DATA_DIR", "data")
+INDEX_DIR = os.getenv("INDEX_DIR")
+MODEL_NAME = os.getenv("MODEL_NAME")
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
+SCOPES = os.getenv("SCOPES")
 
 # Setup logging
 logging.basicConfig(

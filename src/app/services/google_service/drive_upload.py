@@ -1,14 +1,16 @@
+import os
 import json
 import logging
-import os
+from dotenv import load_dotenv
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
+load_dotenv()
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_PATH = 'src/app/utils/token.json'
+SCOPES = os.getenv("SCOPES")
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
 
 # Setup logging
 logging.basicConfig(

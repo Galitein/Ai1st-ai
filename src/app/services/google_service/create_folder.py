@@ -1,10 +1,14 @@
+import os
 import json
 import logging
+from dotenv import load_dotenv
+
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.oauth2.credentials import Credentials
 
-# Configure logging
+load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -14,8 +18,9 @@ logging.basicConfig(
     ]
 )
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_PATH = 'src/app/utils/token.json'
+SCOPES_URL = os.getenv("SCOPES_URL")
+SCOPES = [SCOPES_URL]
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
 
 def get_or_create_drive_folder(folder_name, CREDENTIALS_PATH):
     """

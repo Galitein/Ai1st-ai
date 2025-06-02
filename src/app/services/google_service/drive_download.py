@@ -1,16 +1,18 @@
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from google.oauth2.credentials import Credentials
-
 import io
 import os
 import json
 import logging
+from dotenv import load_dotenv
 
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from google.oauth2.credentials import Credentials
 
-SCOPES = ['https://www.googleapis.com/auth/drive']
-CREDENTIALS_PATH = 'src/app/utils/token.json'
-DOWNLOAD_PATH = './downloads'
+load_dotenv()
+
+SCOPES = os.getenv("SCOPES")
+CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
+DOWNLOAD_PATH = os.getenv("DOWNLOAD_PATH")
 
 # Setup logging
 logging.basicConfig(
@@ -85,7 +87,6 @@ def download_files(file_names):
 
             # Save to local directory
             file_content.seek(0)
-            print(file_content.read().decode('utf-8'))
             local_path = os.path.join(DOWNLOAD_PATH, file_name)
             with open(local_path, 'wb') as f:
                 f.write(file_content.read())
