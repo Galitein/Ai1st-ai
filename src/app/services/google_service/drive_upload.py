@@ -1,11 +1,14 @@
 import os
 import json
 import logging
+import asyncio
 from dotenv import load_dotenv
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
+
+import aiofiles
 
 load_dotenv()
 
@@ -22,7 +25,7 @@ logging.basicConfig(
     ]
 )
 
-def upload_files(file_names):
+async def upload_files(file_names):
     """
     Uploads a list of files to a specific Google Drive folder.
 
@@ -36,8 +39,8 @@ def upload_files(file_names):
 
     # Load folder ID from credentials file
     try:
-        with open(CREDENTIALS_PATH, 'r') as f:
-            cred_data = json.load(f)
+        async with aiofiles.open(CREDENTIALS_PATH, 'r') as f:
+            cred_data = json.loads(await f.read())
         folder_id = cred_data.get('folder_id').get('folder_id')
         if not folder_id:
             raise ValueError("Missing 'folder_id' in token.json.")
@@ -68,17 +71,17 @@ def upload_files(file_names):
             media = MediaFileUpload(file_path, resumable=True)
 
             uploaded = drive_service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id'
+                ).execute()
 
             file_id = uploaded.get('id')
             uploaded_files[file_name] = file_id
-            logging.info("✅ Uploaded '%s' (ID: %s)", file_name, file_id)
+            logging.info("Uploaded '%s' (ID: %s)", file_name, file_id)
 
         except Exception as e:
-            logging.error("❌ Failed to upload '%s': %s", file_path, e)
+            logging.error("Failed to upload '%s': %s", file_path, e)
 
     if uploaded_files:
         return json.dumps({"status": True, "files": uploaded_files}, indent=4)
@@ -87,7 +90,11 @@ def upload_files(file_names):
 
 
 if __name__ == '__main__':
+    import sys
     files = ['README.md', 'requirements.txt']  # Replace with your file list
-    response = upload_files(files)
 
-    print("Response:", json.dumps(response, indent=2))
+    async def main():
+        response = upload_files(files)
+        print("Response:", json.dumps(response, indent=2))
+
+    asyncio.run(main())

@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import asyncio
 from dotenv import load_dotenv
 
 from googleapiclient.discovery import build
@@ -22,7 +23,7 @@ SCOPES_URL = os.getenv("SCOPES_URL")
 SCOPES = [SCOPES_URL]
 CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
 
-def get_or_create_drive_folder(folder_name, CREDENTIALS_PATH):
+async def get_or_create_drive_folder(folder_name, CREDENTIALS_PATH):
     """
     Check if a folder exists in Google Drive. If not, create it.
 
@@ -37,18 +38,18 @@ def get_or_create_drive_folder(folder_name, CREDENTIALS_PATH):
         }
     """
     try:
-        creds = Credentials.from_authorized_user_file(CREDENTIALS_PATH, SCOPES)
-        service = build('drive', 'v3', credentials=creds)
+        creds = await Credentials.from_authorized_user_file(CREDENTIALS_PATH, SCOPES)
+        service = await build('drive', 'v3', credentials=creds)
         logging.info("Google Drive API initialized.")
 
         # Search for the folder
         query = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = service.files().list(
-            q=query,
-            spaces='drive',
-            fields='files(id, name)',
-            pageSize=1
-        ).execute()
+        results = await service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name)',
+                pageSize=1
+            ).execute()
 
         folders = results.get('files', [])
         if folders:
@@ -61,7 +62,7 @@ def get_or_create_drive_folder(folder_name, CREDENTIALS_PATH):
             'name': folder_name,
             'mimeType': 'application/vnd.google-apps.folder'
         }
-        folder = service.files().create(body=folder_metadata, fields='id').execute()
+        folder = await  service.files().create(body=folder_metadata, fields='id').execute()
         folder_id = folder.get('id')
         logging.info("📁 Created new folder '%s' with ID: %s", folder_name, folder_id)
         return {"status": True, "folder_id": folder_id}
@@ -78,5 +79,9 @@ def get_or_create_drive_folder(folder_name, CREDENTIALS_PATH):
 if __name__ == '__main__':
     folder_name = "txtai_docs"
     CREDENTIALS_PATH = "src/app/utils/token.json"
-    result = get_or_create_drive_folder(folder_name, CREDENTIALS_PATH)
-    print(json.dumps(result, indent=2))
+
+    async def main():
+        result = await get_or_create_drive_folder(folder_name, CREDENTIALS_PATH)
+        print(json.dumps(result, indent=2))
+
+    asyncio.run(main())

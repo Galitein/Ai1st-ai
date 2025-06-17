@@ -2,6 +2,8 @@ import os
 import json
 import logging
 from dotenv import load_dotenv
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -22,9 +24,13 @@ logging.basicConfig(
     ]
 )
 
-def list_files_in_folder():
+async def list_files_in_folder(parent_folder_id: str):
     """
-    Lists files in a specified Google Drive folder.
+    Lists all files in the specified folder in the user's Google Drive,
+    and saves the parent_folder_id in the credentials file.
+
+    Args:
+        parent_folder_id (str): The ID of the parent folder.
 
     Returns:
         dict: A dictionary containing the status and a list of files (with their IDs and names).
@@ -32,15 +38,24 @@ def list_files_in_folder():
 
     # Load the credentials file
     try:
-        with open(CREDENTIALS_PATH, 'r') as cred_file:
-            credentials_data = json.load(cred_file)
-        folder_id = credentials_data.get('folder_id', None).get('folder_id', None)
+        credentials_data = json.load(open(CREDENTIALS_PATH, 'r'))
     except FileNotFoundError:
         logging.error("Credentials file not found at: %s", CREDENTIALS_PATH)
         return {"status": False, "files": []}
     except json.JSONDecodeError as e:
         logging.error("Failed to parse credentials file: %s", e)
         return {"status": False, "files": []}
+
+    # Save the parent_folder_id in the credentials file
+    credentials_data["folder_id"] = {
+        "status": True,
+        "folder_id": parent_folder_id
+    }
+    try:
+        json.dump(credentials_data, open(CREDENTIALS_PATH, 'w'), indent=4)
+        logging.info("Saved parent_folder_id %s to credentials file.", parent_folder_id)
+    except Exception as e:
+        logging.error("Failed to save parent_folder_id to credentials file: %s", e)
 
     try:
         creds = Credentials.from_authorized_user_file(CREDENTIALS_PATH, SCOPES)
@@ -51,17 +66,25 @@ def list_files_in_folder():
         return {"status": False, "files": []}
 
     try:
-        query = f"'{folder_id}' in parents"  # Query to list files in the folder
-        results = drive_service.files().list(
-            q=query,
-            pageSize=100,  # Adjust the page size as needed
-            fields="nextPageToken, files(id, name)"
-        ).execute()
-        items = results.get('files', [])
-        logging.info("Successfully retrieved %d files from the folder.", len(items))
+        query = f"'{parent_folder_id}' in parents and trashed = false"
+        files = []
+        page_token = None
 
-        # Prepare the response structure
-        files = [{"id": item["id"], "name": item["name"]} for item in items]
+        while True:
+            results = drive_service.files().list(
+                    q=query,
+                    pageSize=100,
+                    fields="nextPageToken, files(id, name, mimeType)",
+                    pageToken=page_token
+                ).execute()
+            items = results.get('files', [])
+            print(f"Found {items} files in the folder.")
+            files.extend({"id": item["id"], "name": item["name"], "file_type":item["mimeType"]} for item in items)
+            page_token = results.get('nextPageToken', None)
+            if not page_token:
+                break
+
+        logging.info("Successfully retrieved %d files from the folder.", len(files))
         return {"status": True, "files": files}
 
     except HttpError as e:
@@ -70,6 +93,3 @@ def list_files_in_folder():
     except Exception as e:
         logging.error("An unexpected error occurred while listing files: %s", e)
         return {"status": False, "files": []}
-
-# response = list_files_in_folder()
-# print(response)

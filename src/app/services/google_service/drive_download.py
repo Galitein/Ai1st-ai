@@ -3,6 +3,8 @@ import os
 import json
 import logging
 from dotenv import load_dotenv
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -24,7 +26,7 @@ logging.basicConfig(
     ]
 )
 
-def download_files(file_names):
+async def download_files(file_names):
     """
     Downloads specified text files from a Google Drive folder.
 
@@ -33,11 +35,11 @@ def download_files(file_names):
     Returns:
         dict: { "status": bool, "files": list }
     """
+    executor = ThreadPoolExecutor()
 
     # Load credentials JSON and folder_id
     try:
-        with open(CREDENTIALS_PATH, 'r') as cred_file:
-            credentials_data = json.load(cred_file)
+        credentials_data = json.load(open(CREDENTIALS_PATH, 'r'))
         folder_id = credentials_data.get('folder_id').get('folder_id', None)
         if not folder_id:
             raise ValueError("Missing 'folder_id' in credentials file.")
@@ -48,7 +50,7 @@ def download_files(file_names):
     # Load OAuth credentials
     try:
         creds = Credentials.from_authorized_user_file(CREDENTIALS_PATH, SCOPES)
-        drive_service = build('drive', 'v3', credentials=creds)
+        drive_service =  build('drive', 'v3', credentials=creds)
         logging.info("Google Drive service initialized.")
     except Exception as e:
         logging.error("Failed to initialize Drive API: %s", e)
@@ -62,11 +64,11 @@ def download_files(file_names):
         try:
             query = f"'{folder_id}' in parents and name = '{file_name}' and trashed = false"
             results = drive_service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name)',
-                pageSize=1
-            ).execute()
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name)',
+                    pageSize=1
+                ).execute()
             files = results.get('files', [])
 
             if not files:
@@ -82,7 +84,7 @@ def download_files(file_names):
 
             done = False
             while not done:
-                status, done = downloader.next_chunk()
+                status, done =  downloader.next_chunk
                 logging.info("Download progress for '%s': %d%%", file_name, int(status.progress() * 100))
 
             # Save to local directory
@@ -97,12 +99,13 @@ def download_files(file_names):
         except Exception as e:
             logging.error("Failed to download '%s': %s", file_name, e)
         
-    return {"status": bool(download_files), "files": downloaded_files}
+    return {"status": bool(downloaded_files), "files": downloaded_files}
 
 
 if __name__ == '__main__':
+    import asyncio
     files_to_download = ["symfonyUpgrade.txt","symfonySetup.txt", "symfonyFundamentals.txt", "symfonyDoctrine.txt", "symfonyDoc.txt"] # Replace with your target filenames
-    result = download_files(files_to_download)
+    result = asyncio.run(download_files(files_to_download))
 
     if result['status']:
         print(f"✅ Successfully downloaded files: {result['files']}")

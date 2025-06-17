@@ -1,9 +1,11 @@
 import os
-import requests
 import logging
+import asyncio
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
+
 from src.app.utils.prompts import system_prompt
+from src.app.services.text_processing.vector_search import ranksearch, load_index
 
 # Setup logging
 logging.basicConfig(
@@ -19,10 +21,10 @@ logging.basicConfig(
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 
-# Initialize OpenAI client
-client = OpenAI(api_key=api_key)
+# Initialize OpenAI async client
+client = AsyncOpenAI(api_key=api_key)
 
-def generate_chat_completion(query: str):
+async def generate_chat_completion(query: str):
     """
     Generate a chat completion using OpenAI's API.
 
@@ -39,23 +41,18 @@ def generate_chat_completion(query: str):
         prompt = system_prompt.SYSTEM_PROMPT
         logging.info("System prompt loaded successfully.")
 
-        # Fetch context from the /search endpoint
+        # Fetch context from the /search endpoint.
         logging.info("Fetching context from the /search endpoint.")
-        context_response = requests.post(
-            "http://127.0.0.1:8000/search",
-            json={"query": query}
-        )
-
-        if context_response.status_code != 200:
-            error_message = context_response.json().get('detail', 'Unknown error')
-            logging.error(f"Failed to fetch context: {error_message}")
-            return {
-                'status': 'error',
-                'message': f"Failed to fetch context: {error_message}"
-            }
+        index = load_index()
+        if not index:
+            return {'status': False, 'message': "Index not found or failed to load."}
+    
+        results = ranksearch(index, query)
+        if not results.get('status'):
+            return {'status': False, 'message': "Index not found or failed to load."}
 
         # Extract context data
-        context_data = context_response.json()
+        context_data = results
         context = context_data.get("results", [])
         logging.info("Context fetched and processed successfully.")
 
@@ -70,27 +67,21 @@ def generate_chat_completion(query: str):
         ]
         logging.info("Conversation history prepared.")
 
-        # Call OpenAI's ChatCompletion API
+        # Call OpenAI's ChatCompletion API asynchronously
         logging.info("Calling OpenAI's ChatCompletion API.")
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="gpt-4.1",
             messages=messages,
             temperature=0.3,
-            max_tokens=200,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0
+            max_tokens=200
         )
 
         # Extract and return the generated response
         chat_response = response.choices[0].message.content.strip()
         logging.info("Chat completion generated successfully.")
-        return {'status': 'success', 'message': chat_response}
+        return {'status': True, 'message': chat_response}
 
     except Exception as e:
         # Handle exceptions and return an error message
         logging.error(f"An error occurred: {str(e)}")
-        return {
-            'status': 'error',
-            'message': f"An error occurred: {str(e)}"
-        }
+        return {'status': False, 'message': f"An error occurred: {str(e)}"}
