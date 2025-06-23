@@ -26,3 +26,4 @@ langchain-openai
 langchain-qdrant
 sentence-transformers
 fastembed
+tiktoken

@@ -26,7 +26,7 @@ from src.app.services.text_processing import (
 
 from src.app.services.text_generation import (
     generate_prompt,
-    # generate_response
+    generate_response
 )
 
 from src.app.models.input_models import (
@@ -34,7 +34,8 @@ from src.app.models.input_models import (
     QueryInput,
     TaskOrPromptInput,
     FileListOutput,
-    CreateAitInput
+    CreateAitInput,
+    ChatInput
 )
 
 from src.database.mongo import MongoDBClient
@@ -114,7 +115,7 @@ async def create_ait(input_data: CreateAitInput):
     ait_id = str(uuid.uuid4())
 
     # Build index with UUID and file names
-    index_response = await create_embeddings.process_and_build_index(ait_id, input_data.file_names)  # should be async
+    index_response = await create_embeddings.process_and_build_index(ait_id, input_data.file_names, qdrant_collection='bib')  # should be async
     if not index_response.get("status"):
         raise HTTPException(status_code=400, detail=index_response.get("message"))
 
@@ -149,7 +150,7 @@ async def build_index_route(input_data: FileNamesInput):
     index_response = await create_embeddings.process_and_build_index(
         input_data.ait_id, 
         input_data.file_names, 
-        input_date.qdrant_collection
+        input_data.qdrant_collection
     )  
     if not index_response.get("status"):
         raise HTTPException(status_code=400, detail=index_response.get("message"))
@@ -165,7 +166,7 @@ async def search_route(input_data: QueryInput):
         input_data.qdrant_collection, 
         input_data.limit, 
         input_data.similarity_threshold
-    )  # should be async
+    )  
     if not response.get('status'):
         raise HTTPException(status_code=400, detail="No results found.")
 
@@ -200,14 +201,17 @@ async def delete_index(input_data: FileNamesInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting index and records: {str(e)}")
 
-# @router.post("/chat")
-# async def generate_query_response(input_data: QueryInput):
-#     """
-#     Generates a response based on the user's query using the system prompt.
-#     """
-#     response = generate_response.generate_chat_completion(input_data.query)
+@router.post("/chat")
+async def generate_query_response(input_data: ChatInput):
+    """
+    Generates a response based on the user's query using the system prompt.
+    """
+    response = await generate_response.generate_chat_completion(
+        input_data.ait_id, 
+        input_data.query
+    )
+
+    if response.get('status') == 'error':
+        raise HTTPException(status_code=400, detail=response.get('message'))
     
-#     if response.get('status') == 'error':
-#         raise HTTPException(status_code=400, detail=response.get('message'))
-    
-#     return response
+    return response

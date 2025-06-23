@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 from src.app.utils.prompts import system_prompt
-from src.app.services.text_processing.vector_search import ranksearch, load_index
+from src.app.services.text_processing.vector_search import search
 
 # Setup logging
 logging.basicConfig(
@@ -24,7 +24,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 # Initialize OpenAI async client
 client = AsyncOpenAI(api_key=api_key)
 
-async def generate_chat_completion(query: str):
+async def generate_chat_completion(ait_id:str, query:str):
     """
     Generate a chat completion using OpenAI's API.
 
@@ -41,28 +41,38 @@ async def generate_chat_completion(query: str):
         prompt = system_prompt.SYSTEM_PROMPT
         logging.info("System prompt loaded successfully.")
 
-        # Fetch context from the /search endpoint.
-        logging.info("Fetching context from the /search endpoint.")
-        index = load_index()
-        if not index:
-            return {'status': False, 'message': "Index not found or failed to load."}
-    
-        results = ranksearch(index, query)
-        if not results.get('status'):
-            return {'status': False, 'message': "Index not found or failed to load."}
+        extracted_bib = await search(
+            ait_id=ait_id,
+            query=query,
+            qdrant_collection="bib",
+            limit=3,
+            similarity_threshold=0.1
+        )
+        print(f"Extracted bib: {extracted_bib}")
+        if not extracted_bib.get("status"):
+            logging.error("No results found for the query.")
+            return {'status': False, 'message': "No results found for the query."}
+        
+        extracted_log = await search(
+            ait_id=ait_id,
+            query=query,
+            qdrant_collection="log",
+            limit=8,
+            similarity_threshold=0.5
+        )
+        print(f"Extracted log: {extracted_log}")
+        if not extracted_log.get("status"):
+            logging.error("No results found for the query.")
+            return {'status': False, 'message': "No results found for the query."}
 
-        # Extract context data
-        context_data = results
-        context = context_data.get("results", [])
-        logging.info("Context fetched and processed successfully.")
-
-        # Combine the context list into a single string
-        combined_context = " ".join(context)
-
-        # Prepare the conversation history
+        context_results = extracted_bib.get("results", []) + extracted_log.get("results", [])
+        context_text = "\n\n".join(
+                f"File: {r.get('file_name', '')}\nContent: {r.get('page_content', '')}"
+                for r in context_results
+            )
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": combined_context},
+            {"role": "user", "content": context_text},
             {"role": "user", "content": query}
         ]
         logging.info("Conversation history prepared.")
@@ -77,7 +87,7 @@ async def generate_chat_completion(query: str):
         )
 
         # Extract and return the generated response
-        chat_response = response.choices[0].message.content.strip()
+        chat_response = response.choices[0].message
         logging.info("Chat completion generated successfully.")
         return {'status': True, 'message': chat_response}
 

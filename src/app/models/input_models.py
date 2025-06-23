@@ -22,3 +22,7 @@ class FileListOutput(BaseModel):
 class CreateAitInput(BaseModel):
     file_names: List[str]
     task_or_prompt: str
+
+class ChatInput(BaseModel):
+    ait_id: str
+    query: str

@@ -31,12 +31,19 @@ async def delete_file_index(ait_id, file_names, qdrant_collection):
         namespace = f"qdrant/{ait_id}"
         record_manager = sql_record_manager(namespace=namespace)
         all_source_ids = get_all_source_ids(namespace)
+        
         for file_name in file_names:
             prefix = f"{ait_id}_{file_name}_"
             file_source_ids = [sid for sid in all_source_ids if sid.startswith(prefix)]
             if not file_source_ids:
                 logging.info(f"No index found for file: {file_name}")
                 continue
+
+            for source_id in file_source_ids:
+                await qdrant_client.delete_by_source_id(
+                    collection_name=qdrant_collection,
+                    source_id=source_id
+                )
             # Use qdrant_collection here if needed for deletion
             delete_source_ids(namespace, file_source_ids)
             logging.info(f"Deleted index and records for file: {file_name}")

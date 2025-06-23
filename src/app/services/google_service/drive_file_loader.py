@@ -51,7 +51,7 @@ async def load_documents(file_names, ait_id, logger=None):
             if not page_content:
                 continue
             preprocessed_content = page_content.replace('\n', ' ')
-            chunks = chunk_text(preprocessed_content, max_len=500, overlap=50)
+            chunks = chunk_text(preprocessed_content, max_tokens=200, overlap=20)
             logger.info(f"Loaded {len(chunks)} chunks from file: {file_name}")
             for idx, chunk in enumerate(chunks):
                 documents.append(

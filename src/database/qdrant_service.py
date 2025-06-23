@@ -46,7 +46,7 @@ class QdrantService:
             query_filter=exp_filter
         )
     
-    def delete_by_source_id(self, collection_name, source_id):
+    async def delete_by_source_id(self, collection_name, source_id):
         """
         Asynchronously delete all points in the collection with the given source_id in payload.
         """
@@ -58,7 +58,9 @@ class QdrantService:
                 )
             ]
         )
-        return self.client.delete(
+        return await self.client.delete(
             collection_name=collection_name,
             points_selector=filter_
         )
+
+

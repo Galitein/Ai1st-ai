@@ -47,9 +47,6 @@ async def search(ait_id, query, qdrant_collection, limit=10, similarity_threshol
         ait_id=ait_id,
         limit=limit,
     )
-    print(f"Search results: {search_result}")
-    # filepath: /var/www/html_new/ai1st_customgpt/Ai1st-ai/src/app/services/text_processing/vector_search.py
-    print("Threshold:", similarity_threshold)
     filtered_results = []
     for hit in search_result:
         if hit.score >=similarity_threshold:
