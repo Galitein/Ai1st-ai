@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from msal import ConfidentialClientApplication
 from fastapi import APIRouter, Request, Request, Query
 from fastapi.responses import RedirectResponse, JSONResponse
-from src.routes.ms_exchange.token_store import save_token, get_token
+from src.routes.ms_exchange.token_store import save_token, get_token, refresh_access_token
 
 load_dotenv(override=True)
 
@@ -20,9 +20,10 @@ AZURE_SECRET_ID = os.getenv("AZURE_SECRET_VALUE")
 TENANT_ID = os.getenv("TENANT_ID")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 AUTHORITY = f"https://login.microsoftonline.com/common"
-AUTH_SCOPES = ["Mail.ReadWrite"]
-TOKEN_SCOPES = ["Mail.ReadWrite"]
-GRAPH_SCOPES = ["Mail.ReadWrite"]
+AUTH_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
+TOKEN_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
+GRAPH_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
+user_id = "user1"
 
 msal_app = ConfidentialClientApplication(
     client_id=AZURE_CLIENT_ID,
@@ -35,14 +36,14 @@ def login():
     auth_url = msal_app.get_authorization_request_url(
         scopes=AUTH_SCOPES,  # don't include offline_access here
         redirect_uri=REDIRECT_URI,
-        state="user1"
+        state=user_id
     )
     return RedirectResponse(auth_url)
 
 @ms_router.get("/azurecallback")
 def callback(request: Request):
     code = request.query_params.get("code")
-    state = request.query_params.get("state", "user1")  # Default user ID for now
+    state = request.query_params.get("state", user_id)  # Default user ID for now
     result = msal_app.acquire_token_by_authorization_code(
         code,
         scopes=GRAPH_SCOPES,  # include offline_access here
@@ -71,7 +72,7 @@ def get_emails(
     """
     
     # TODO: remove this hard coded user with proper UID format
-    token_data = get_token("user1")
+    token_data = get_token(user_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
 
@@ -216,7 +217,15 @@ def get_emails(
             if response.status_code == 200:
                 break
             elif response.status_code == 401:
-                return JSONResponse({"error": "Authentication failed. Token may be expired."}, status_code=401)
+                # return JSONResponse({"error": "Authentication failed. Token may be expired."}, status_code=401)
+                new_access_token = refresh_access_token(user_id) 
+                headers = {
+                    "Authorization": f"Bearer {new_access_token}",
+                    "Prefer": 'outlook.timezone="UTC"',
+                    "Content-Type": "application/json"
+                }
+                response = requests.get(url, headers=headers, timeout=30)
+
             elif response.status_code == 403:
                 return JSONResponse({"error": "Insufficient permissions to access emails."}, status_code=403)
             elif response.status_code == 429:
