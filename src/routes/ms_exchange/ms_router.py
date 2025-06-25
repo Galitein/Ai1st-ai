@@ -41,7 +41,7 @@ def login():
     return RedirectResponse(auth_url)
 
 @ms_router.get("/azurecallback")
-def callback(request: Request):
+async def callback(request: Request):
     code = request.query_params.get("code")
     state = request.query_params.get("state", user_id)  # Default user ID for now
     result = msal_app.acquire_token_by_authorization_code(
@@ -50,13 +50,13 @@ def callback(request: Request):
         redirect_uri=REDIRECT_URI
     )
     if "access_token" in result:
-        save_token(state, result)
+        await save_token(state, result)
         return JSONResponse({"message": "Login successful!"})
     return JSONResponse({"error": result.get("error_description")})
 
 
 @ms_router.get("/me/emails")
-def get_emails(
+async def get_emails(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     from_email: Optional[str] = None,
@@ -72,7 +72,7 @@ def get_emails(
     """
     
     # TODO: remove this hard coded user with proper UID format
-    token_data = get_token(user_id)
+    token_data = await get_token(user_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
 
@@ -218,7 +218,7 @@ def get_emails(
                 break
             elif response.status_code == 401:
                 # return JSONResponse({"error": "Authentication failed. Token may be expired."}, status_code=401)
-                new_access_token = refresh_access_token(user_id) 
+                new_access_token = await refresh_access_token(user_id) 
                 headers = {
                     "Authorization": f"Bearer {new_access_token}",
                     "Prefer": 'outlook.timezone="UTC"',
