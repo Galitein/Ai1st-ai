@@ -2,8 +2,17 @@ import os
 import json
 import uuid
 
+from typing import Literal, List, Optional
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import (
+    APIRouter, 
+    HTTPException, 
+    Request, 
+    UploadFile, 
+    File, 
+    Form,
+    Body
+)
 # from pydantic import BaseModel
 # from typing import List
 # from fastapi.responses import RedirectResponse, JSONResponse
@@ -56,11 +65,27 @@ async def authenticate(request: Request):
     return credentials
 
 @router.post("/upload")
-async def upload_file(input_data: FileNamesInput):
+# async def upload_file(input_data: FileNamesInput):
+async def upload_file(
+    files: list[UploadFile] = File(...),
+    # destination: str = Form("google")
+    ):
     """
     Uploads files to Google Drive.
     """
-    uploaded_files = await drive_upload.upload_files(input_data.file_names)  # should be async
+    file_paths = []
+    for upload in files:
+        # file_content = await upload.read()
+        temp_path = f"/tmp/{upload.filename}"
+        with open(temp_path, "wb") as f:
+            file_content = await upload.read()
+            print(f"Writing to temporary file: {temp_path}")
+            print(f"File name: {upload.filename}")
+            # print(f"File content: {file_content}")  # Uncomment to see content
+            f.write(file_content)
+        file_paths.append(temp_path)
+    uploaded_files = await drive_upload.upload_files(file_paths)  # should be async
+    # uploaded_files = await drive_upload.upload_files(input_data.file_names)  # should be async
     return {"uploaded_files": uploaded_files}
 
 @router.get("/list_folders")
@@ -108,14 +133,44 @@ async def refresh_token():
         raise HTTPException(status_code=400, detail=f"Could not read credentials: {str(e)}")
 
 @router.post("/create_ait")
-async def create_ait(input_data: CreateAitInput):
+# async def create_ait(input_data: CreateAitInput):
+async def create_ait(
+    files: Optional[list[UploadFile]] = File(None), 
+    file_names: Optional[List[str]] = None,  # Comma-separated string for Google Drive
+    task_or_prompt: str = Form(...),
+    destination: Literal["google", "local"] = Form("google")
+):
     """
     Creates a UUID, builds an index from the given file names, and generates a system prompt.
     """
     ait_id = str(uuid.uuid4())
+    if destination == "local":
+        save_dir = f"./temp/{ait_id}"
+        os.makedirs(save_dir, exist_ok=True)
+        local_file_paths = []
+        for upload in files:
+            file_path = os.path.join(save_dir, upload.filename)
+            file_content = await upload.read()
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+            local_file_paths.append(upload.filename)
+        
+        file_names_list = local_file_paths  # Use local file names for processing
+    
+    elif destination == "google":
+        if not file_names:
+            raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+        # Ensure file_names is a list of strings
+        if isinstance(file_names, str):
+            file_names_list = [name.strip() for name in file_names.split(",")]
 
     # Build index with UUID and file names
-    index_response = await create_embeddings.process_and_build_index(ait_id, input_data.file_names, qdrant_collection='bib')  # should be async
+    index_response = await create_embeddings.process_and_build_index(
+        ait_id=ait_id, 
+        file_names=file_names_list, 
+        document_collection='bib',
+        destination=destination
+    )  # should be async
     if not index_response.get("status"):
         raise HTTPException(status_code=400, detail=index_response.get("message"))
 
@@ -150,7 +205,7 @@ async def build_index_route(input_data: FileNamesInput):
     index_response = await create_embeddings.process_and_build_index(
         input_data.ait_id, 
         input_data.file_names, 
-        input_data.qdrant_collection
+        input_data.document_collection
     )  
     if not index_response.get("status"):
         raise HTTPException(status_code=400, detail=index_response.get("message"))
@@ -161,11 +216,11 @@ async def search_route(input_data: QueryInput):
     Searches the index for the given query and returns ranked results.
     """
     response = await vector_search.search(
-        input_data.ait_id, 
-        input_data.query, 
-        input_data.qdrant_collection, 
-        input_data.limit, 
-        input_data.similarity_threshold
+        ait_id=input_data.ait_id, 
+        query=input_data.query, 
+        document_collection=input_data.document_collection, 
+        limit=input_data.limit, 
+        similarity_threshold=input_data.similarity_threshold
     )  
     if not response.get('status'):
         raise HTTPException(status_code=400, detail="No results found.")
@@ -193,7 +248,7 @@ async def delete_index(input_data: FileNamesInput):
         delete_response = await delete_embeddings.delete_file_index(
             input_data.ait_id, 
             input_data.file_names,
-            input_data.qdrant_collection
+            input_data.document_collection
         )
         if not delete_response.get("status"):
             raise HTTPException(status_code=400, detail=delete_response.get("message"))

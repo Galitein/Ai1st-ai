@@ -11,6 +11,7 @@ from langchain.indexes import index
 from src.database.sql_record_manager import sql_record_manager
 from src.database.qdrant_service import QdrantService
 from src.app.services.google_service.drive_file_loader import load_documents
+from src.app.services.text_processing.local_file_loader import load_local_documents
 
 load_dotenv()
 
@@ -27,33 +28,48 @@ logging.basicConfig(
     ]
 )
 
-async def process_and_build_index(ait_id, file_names, qdrant_collection):
+async def process_and_build_index(ait_id, file_names, document_collection, destination):
     """
     Incrementally indexes files using Qdrant and tracks file states using SQLRecordManager.
 
     Args:
-        ait_id (str): Unique identifier for the AIT.
+        ait_id (str): Unique identifier for the AIT and Qdrant collection name.
         file_names (list): List of file names to process.
-        qdrant_collection (str): Qdrant collection name.
+        document_collection (str): Qdrant sub_collection name.
 
     Returns:
         dict: Status and result of the indexing process.
     """
-    # 1. Load and chunk documents
-    documents = await load_documents(file_names, ait_id, logger=logging)
-    logging.info(f"Loaded {len(documents)} documents for indexing.")
+    # 1. Load and chunk documents from local files or Google Drive
+    if destination == "google":
+        documents = await load_documents(
+            file_names=file_names, 
+            ait_id=ait_id, 
+            document_collection=document_collection,
+            logger=logging,
+        )
+        logging.info(f"Loaded {len(documents)} documents for indexing.")
+
+    elif destination == "local":
+            documents = await load_local_documents(
+            file_names=file_names, 
+            ait_id=ait_id, 
+            document_collection=document_collection,
+            logger=logging,
+        )
+        logging.info(f"Loaded {len(documents)} documents for indexing.")
 
     # 2. Create Embeddings of the chunks
     embedding = SentenceTransformerEmbeddings(model_name=MODEL_NAME)
 
     qdrant_client = QdrantService(host=QDRANT_HOST, port=QDRANT_PORT)
-    if not await qdrant_client.collection_exists(qdrant_collection):
+    if not await qdrant_client.collection_exists(collection_name=ait_id):
         await qdrant_client.create_collection(
-            collection_name=qdrant_collection
+            collection_name=ait_id
         )
     vectorstore = QdrantVectorStore(
         client=qdrant_client.sync_client,
-        collection_name=qdrant_collection,
+        collection_name=ait_id,
         embedding=embedding,
     )
     

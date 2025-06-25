@@ -30,17 +30,17 @@ class QdrantService:
             points=points
         )
 
-    async def search(self, collection_name, query_vector, ait_id, limit=5):
+    async def search(self, document_collection, query_vector, ait_id, limit=5):
         exp_filter = Filter(
             must=[
                 FieldCondition(
-                    key="metadata.ait_id",
-                    match=MatchValue(value=ait_id)
+                    key="metadata.type",
+                    match=MatchValue(value=document_collection)
                 )
             ]
         )
         return await self.client.search(
-            collection_name=collection_name,
+            collection_name=ait_id,
             query_vector=query_vector,
             limit=limit,
             query_filter=exp_filter
