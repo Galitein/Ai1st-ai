@@ -49,9 +49,9 @@ async def process_and_build_index(ait_id, file_names, document_collection, desti
             logger=logging,
         )
         logging.info(f"Loaded {len(documents)} documents for indexing.")
-
     elif destination == "local":
-            documents = await load_local_documents(
+        print("-------------------------", file_names)
+        documents = await load_local_documents(
             file_names=file_names, 
             ait_id=ait_id, 
             document_collection=document_collection,

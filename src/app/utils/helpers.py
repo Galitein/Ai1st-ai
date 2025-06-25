@@ -1,8 +1,9 @@
 import io
+import os
 import tiktoken
 from datetime import datetime
 import tempfile
-
+import mimetypes
 from googleapiclient.http import MediaIoBaseDownload
 
 from src.app.utils.extractors import image_to_text, audio_to_text
@@ -122,29 +123,21 @@ def load_content_drive_file(drive_service, folder_id, file_name, logger):
         return None, None
 
 
-def load_content_local_file(file_name, logger):
+def load_content_local_file(file_path, logger):
     """
-    Download a file from Google Drive by name and folder_id.
-    Returns (page_content, modified_time) if found, else (None, None).
-
-    Args:
-        drive_service: Google Drive API service instance.
-        folder_id (str): ID of the folder to search in.
-        file_name (str): Name of the file to download.
-        logger: Logger instance for logging.
-
-    Returns:
-        tuple: (page_content, modified_time) or (None, None) on failure.
+    Loads a local file and processes it based on file type.
     """
-
     try:
-        file_mime_type, _ = mimetypes.guess_type(file_name)
-        with open(f"./temp/{ait_id}/{file_name}", 'rb') as file:
+        file_mime_type, _ = mimetypes.guess_type(file_path)
+        modified_time = str(datetime.utcfromtimestamp(os.path.getmtime(file_path)))
+
+        # Open as binary for all file types
+        with open(file_path, 'rb') as file:
             file_content = file.read()
 
         # Text files
         if file_mime_type == "text/plain" or file_path.endswith(('.txt', '.md', '.csv')):
-            page_content = file_content.decode('utf-8')
+            page_content = file_content.decode('utf-8')  # Now this works because file_content is bytes
             content_chunks = chunk_text(page_content.replace('\n', ' '), max_tokens=200, overlap=20)
             return {
                 "content_chunks": content_chunks,

@@ -10,8 +10,10 @@ async def load_local_documents(file_names, ait_id, document_collection, logger=N
     documents = []
     for file_name in file_names:
         try:
-            content_response = load_content_local_file(file_name, logger)
-            content_chunks = chunk_text(content.get('content_chunks').replace('\n', ' '), max_tokens=200, overlap=20)
+            print(file_name)
+            file_path = os.path.join("temp", ait_id, file_name)
+            content_response = load_content_local_file(file_path, logger)
+            content_chunks = content_response.get('content_chunks')
             for idx, chunk in enumerate(content_chunks):
                 documents.append(
                     Document(
