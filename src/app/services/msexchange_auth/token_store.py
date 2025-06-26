@@ -14,7 +14,7 @@ AUTHORITY = f"https://login.microsoftonline.com/common"
 MONGO_URI = os.getenv("MONGO_URI")
 mongo_client = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client["ai1st_customgpt"]
-collection = db["token_data"]
+collection = db["ms_token_data"]
 emails_collection = db["email_data"]
 GRAPH_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
 
