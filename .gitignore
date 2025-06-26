@@ -162,3 +162,4 @@ client_secret.json
 token.json
 
 uv-x86_64-unknown-linux-gnu.tar.gz
+test.py
