@@ -6,10 +6,9 @@ from typing import Optional
 from dotenv import load_dotenv
 from urllib.parse import quote
 from datetime import datetime, timedelta
-from msal import ConfidentialClientApplication
-from fastapi import APIRouter, Request, Request, Query
-from fastapi.responses import RedirectResponse, JSONResponse
-from src.routes.ms_exchange.token_store import save_token, get_token, refresh_access_token, store_emails_in_mongodb
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
+from src.app.services.msexchange_auth.token_store import get_token, refresh_access_token, store_emails_in_mongodb
 
 load_dotenv(override=True)
 
@@ -26,54 +25,15 @@ GRAPH_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
 user_id = "user1"
 
 
-
-msal_app = ConfidentialClientApplication(
-    client_id=AZURE_CLIENT_ID,
-    client_credential=AZURE_SECRET_ID,
-    authority=AUTHORITY
-)
-
-@ms_router.get("/login")
-def login():
-    auth_url = msal_app.get_authorization_request_url(
-        scopes=AUTH_SCOPES,  # don't include offline_access here
-        redirect_uri=REDIRECT_URI,
-        state=user_id
-    )
-    return RedirectResponse(auth_url)
-
-@ms_router.get("/azurecallback")
-async def callback(request: Request):
-    code = request.query_params.get("code")
-    state = request.query_params.get("state", user_id)  # Default user ID for now
-    result = msal_app.acquire_token_by_authorization_code(
-        code,
-        scopes=GRAPH_SCOPES,  # include offline_access here
-        redirect_uri=REDIRECT_URI
-    )
-    if "access_token" in result:
-        await save_token(state, result)
-        return JSONResponse({"message": "Login successful!"})
-    return JSONResponse({"error": result.get("error_description")})
-
-
-@ms_router.get("/me/emails")
-async def get_emails(
-    user_id: str = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    from_email: Optional[str] = None,
-    unread_only: Optional[bool] = False,
-    search: Optional[str] = None,
-    top: Optional[int] = Query(10, ge=1, le=100),  
-    orderby: Optional[str] = "receivedDateTime desc",
-    next_url: Optional[str] = None
-):
-    """
-    Get emails with proper filtering and edge case handling.
-    At least one filter must be provided to prevent fetching all emails.
-    """
-    
+async def get_emails(user_id: str = None,
+                    start_date: Optional[str] = None,
+                    end_date: Optional[str] = None,
+                    from_email: Optional[str] = None,
+                    unread_only: Optional[bool] = False,
+                    search: Optional[str] = None,
+                    top: Optional[int] = Query(10, ge=1, le=100),  
+                    orderby: Optional[str] = "receivedDateTime desc",
+                    next_url: Optional[str] = None):
     token_data = await get_token(user_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
@@ -444,23 +404,15 @@ async def get_emails(
         }, status_code=500)
 
 
-@ms_router.post("/me/emails/sync")  # Changed to POST since we're now storing data
-async def sync_emails(
-    user_id: str = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    from_email: Optional[str] = None,
-    unread_only: Optional[bool] = False,
-    search: Optional[str] = None,
-    top: Optional[int] = Query(10, ge=1, le=100),  
-    orderby: Optional[str] = "receivedDateTime desc",
-    next_url: Optional[str] = None
-):
-    """
-    Sync emails to MongoDB with proper filtering and edge case handling.
-    At least one filter must be provided to prevent fetching all emails.
-    """
-    
+async def sync_emails(user_id: str = None,
+                    start_date: Optional[str] = None,
+                    end_date: Optional[str] = None,
+                    from_email: Optional[str] = None,
+                    unread_only: Optional[bool] = False,
+                    search: Optional[str] = None,
+                    top: Optional[int] = Query(10, ge=1, le=100),  
+                    orderby: Optional[str] = "receivedDateTime desc",
+                    next_url: Optional[str] = None):
     token_data = await get_token(user_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
