@@ -1,6 +1,6 @@
 # Ai1st-ai
 
-This repository contains the AI components for the Ai1st & Bestforming project. It provides services for document ingestion, embedding, semantic search, prompt generation, and integration with Google Drive, all exposed via a FastAPI backend.
+This repository contains the AI backend for the Ai1st & Bestforming project. It provides services for document ingestion, embedding, semantic search, prompt generation, and integration with Google Drive, all exposed via a FastAPI backend.
 
 ---
 
@@ -18,15 +18,17 @@ This repository contains the AI components for the Ai1st & Bestforming project. 
   - [Models](#models)
   - [Utilities](#utilities)
 - [Environment Variables](#environment-variables)
+- [API Usage](#api-usage)
 - [How It Works](#how-it-works)
 - [Development](#development)
 - [License](#license)
+- [FAQ](#faq)
 
 ---
 
 ## Project Structure
 
-```
+```text
 Ai1st-ai/
 │
 ├── app.py
@@ -65,10 +67,13 @@ Ai1st-ai/
 │   │   │   │   └── generate_response.py
 │   │   │   ├── text_processing/
 │   │   │   │   ├── create_embeddings.py
+│   │   │   │   ├── delete_embeddings.py
+│   │   │   │   ├── local_file_loader.py
 │   │   │   │   └── vector_search.py
 │   │   ├── utils/
 │   │   │   ├── __init__.py
 │   │   │   ├── helpers.py
+│   │   │   ├── extractors.py
 │   │   │   └── prompts/
 │   │   │       ├── system_prompt.py
 │   │   │       ├── meta_prompt.py
@@ -111,6 +116,8 @@ Ai1st-ai/
 #### Text Processing (`src/app/services/text_processing/`)
 
 - **`create_embeddings.py`**: Orchestrates the process of loading documents, chunking, embedding, and indexing them in Qdrant for semantic search.
+- **`delete_embeddings.py`**: Removes embeddings and records for specific files.
+- **`local_file_loader.py`**: Loads and chunks files from the local filesystem.
 - **`vector_search.py`**: Performs semantic search over the indexed embeddings using Qdrant.
 
 #### Text Generation (`src/app/services/text_generation/`)
@@ -132,6 +139,7 @@ Ai1st-ai/
 ### Utilities (`src/app/utils/`)
 
 - **`helpers.py`**: Common helper functions, such as text chunking and Google Drive file content loading.
+- **`extractors.py`**: Functions for extracting text from images, audio, and (future) video.
 - **`prompts/`**: Contains prompt templates and dynamically generated system prompts for use with LLMs.
 
 ---
@@ -140,7 +148,7 @@ Ai1st-ai/
 
 The application relies on several environment variables, typically set in a `.env` file:
 
-- `MODEL_NAME`: Name of the embedding model.
+- `MODEL_NAME`: Name of the embedding model (e.g., `sentence-transformers/all-MiniLM-L6-v2`).
 - `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_BIB_COLLECTION`: Qdrant vector DB configuration.
 - `SCOPES`, `SCOPES_URL`: Google API scopes.
 - `CREDENTIALS_PATH`, `CLIENT_FILE`: Paths to Google OAuth credentials.
@@ -149,6 +157,52 @@ The application relies on several environment variables, typically set in a `.en
 - `SQLITE_DB_PATH`: Path for SQLite DB used by LangChain.
 - `MONGO_URI`, `MONGO_DB`: MongoDB connection details.
 - `DOWNLOAD_PATH`: Local path for downloaded files.
+
+---
+
+## API Usage
+
+### Authentication
+
+- **POST `/authenticate`**  
+  Exchange Google OAuth code for tokens and store credentials.
+
+### Google Drive
+
+- **POST `/upload`**  
+  Upload files to Google Drive.
+- **GET `/list_folders`**  
+  List all folders in Google Drive.
+- **GET `/list_files?folder_id=...`**  
+  List files in a specific folder and set it as the working folder.
+- **POST `/download`**  
+  Download files from Google Drive.
+
+### Indexing & Embeddings
+
+- **POST `/create_ait`**  
+  Create a new AIT (AI Task) with files and a prompt, and build the index.
+- **POST `/create_embeddings`**  
+  Build or update the index for a set of files.
+- **POST `/delete_embeddings`**  
+  Delete embeddings and records for specific files.
+
+### Search & Generation
+
+- **POST `/search`**  
+  Search indexed documents for relevant content.
+- **POST `/desc_sys_prompt`**  
+  Generate a system prompt from a user task or prompt.
+- **POST `/chat`**  
+  Generate a chat response using the system prompt and retrieved context.
+
+#### Example: Creating an AIT
+
+1. Authenticate with Google and select a folder.
+2. Upload or select files.
+3. Call `/create_ait` with file names and a task description.
+4. The backend builds the index and generates a system prompt.
+5. Use `/chat` to ask questions about the indexed content.
 
 ---
 
@@ -225,11 +279,16 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ---
 
-## Notes
+## FAQ
 
-- Sensitive files and data (such as credentials, tokens, and local cache) are excluded from version control via `.gitignore`.
-- For prompt engineering, see the templates in `src/app/utils/prompts/`.
-- For extending or customizing the AI pipeline, refer to the modular service files in `src/app/services/`.
+**Q: How do I add support for new file types?**  
+A: Extend the logic in `helpers.py` and `extractors.py` to handle new file types and extraction methods.
+
+**Q: Where are credentials stored?**  
+A: Credentials are stored in the path specified by `CREDENTIALS_PATH` (see your `.env`).
+
+**Q: How do I reset the index or remove files?**  
+A: Use the `/delete_embeddings` endpoint with the relevant file names and AIT ID.
 
 ---
 
