@@ -44,7 +44,7 @@ async def generate_chat_completion(ait_id:str, query:str):
         extracted_bib = await search(
             ait_id=ait_id,
             query=query,
-            qdrant_collection="bib",
+            document_collection="bib",
             limit=3,
             similarity_threshold=0.1
         )
@@ -56,7 +56,7 @@ async def generate_chat_completion(ait_id:str, query:str):
         extracted_log = await search(
             ait_id=ait_id,
             query=query,
-            qdrant_collection="log",
+            document_collection="log",
             limit=8,
             similarity_threshold=0.5
         )

@@ -11,14 +11,15 @@ load_dotenv()
 CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
 SCOPES = os.getenv("SCOPES")
 
-async def load_documents(file_names, ait_id, logger=None):
+async def load_documents(file_names, ait_id, document_collection, logger=None):
     """
     Loads and chunks documents from Google Drive.
 
     Args:
         file_names (list): List of file names to load.
-        ait_id (str): Unique identifier for the AIT.
+        ait_id (str): Unique identifier for the AIT and Qdrant collection name.
         logger: Logger instance (optional).
+        document_collection (str): Qdrant sub_collection name.
 
     Returns:
         list: List of Document objects.
@@ -47,26 +48,31 @@ async def load_documents(file_names, ait_id, logger=None):
 
     for file_name in file_names:
         try:
-            page_content, modified_time = load_content_drive_file(drive_service, folder_id, file_name, logger)
-            if not page_content:
+            content_response = load_content_drive_file(drive_service, folder_id, file_name, logger)
+            if not content_response:
                 continue
-            preprocessed_content = page_content.replace('\n', ' ')
-            chunks = chunk_text(preprocessed_content, max_tokens=200, overlap=20)
-            logger.info(f"Loaded {len(chunks)} chunks from file: {file_name}")
-            for idx, chunk in enumerate(chunks):
-                documents.append(
-                    Document(
-                        page_content=chunk.strip(),
-                        metadata={
-                            "ait_id": ait_id,
-                            "type": "bib",
-                            "file_name": file_name,
-                            "chunk_index": idx,
-                            "modified_time": modified_time,
-                            "source_id": f"{ait_id}_{file_name}_{idx}"
-                        }
+            # preprocessed_content = page_content.replace('\n', ' ')
+            # chunks = chunk_text(preprocessed_content, max_tokens=200, overlap=20)
+            logger.info(f"Loaded {len(content_response.get('content_chunks'))} chunks from file: {file_name}")
+            content_chunks = content_response.get('content_chunks')
+            print(f"Content chunks: {len(content_chunks)}")
+            file_type = content_response.get('file_type')
+            print(f"Content type: {file_type}")
+            if file_type in ("text", "audio") and isinstance(content_chunks, list):
+                for idx, chunk in enumerate(content_chunks):
+                    documents.append(
+                        Document(
+                            page_content=chunk.strip(),
+                            metadata={
+                                "ait_id": ait_id,
+                                "type": document_collection,
+                                "file_name": file_name,
+                                "chunk_index": idx,
+                                "modified_time": content_response.get('modified_time'),
+                                "source_id": f"{document_collection}_{file_name}_{idx}"
+                            }
+                        )
                     )
-                )
         except Exception as e:
             logger.error(f"Error processing file {file_name}: {e}")
             continue

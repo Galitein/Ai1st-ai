@@ -24,10 +24,18 @@ def get_all_source_ids(namespace):
     conn = sqlite3.connect(SQL_DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT group_id FROM upsertion_record WHERE namespace = ?", (namespace,)
+        "SELECT * FROM upsertion_record WHERE namespace = ?", (namespace,)
     )
     rows = cursor.fetchall()
     column_names = [description[0] for description in cursor.description]
+    print(f"Column names: {column_names}")
+
+    # # Save to CSV
+    # with open("dummy_data/trial.csv", 'w', newline='') as csvfile:
+    #     writer = csv.writer(csvfile)
+    #     writer.writerow(column_names)
+    #     writer.writerows(rows)
+
     conn.close()
 
     return [row[0] for row in rows]
@@ -45,3 +53,6 @@ def delete_source_ids(namespace, group_ids):
         )
     conn.commit()
     conn.close()
+
+
+get_all_source_ids("qdrant/fe0b75f3-cf75-4e4c-8b56-d73cf64b3a4b")  # Example usage

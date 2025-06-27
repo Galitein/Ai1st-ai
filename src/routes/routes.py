@@ -1,9 +1,20 @@
 import os
 import json
 import uuid
+import shutil
+import logging
 
+from typing import Literal, List, Optional
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import (
+    APIRouter, 
+    HTTPException, 
+    Request, 
+    UploadFile, 
+    File, 
+    Form,
+    Body
+)
 # from pydantic import BaseModel
 # from typing import List
 # from fastapi.responses import RedirectResponse, JSONResponse
@@ -56,11 +67,27 @@ async def authenticate(request: Request):
     return credentials
 
 @router.post("/upload")
-async def upload_file(input_data: FileNamesInput):
+# async def upload_file(input_data: FileNamesInput):
+async def upload_file(
+    files: list[UploadFile] = File(...),
+    # destination: str = Form("google")
+    ):
     """
     Uploads files to Google Drive.
     """
-    uploaded_files = await drive_upload.upload_files(input_data.file_names)  # should be async
+    file_paths = []
+    for upload in files:
+        # file_content = await upload.read()
+        temp_path = f"/tmp/{upload.filename}"
+        with open(temp_path, "wb") as f:
+            file_content = await upload.read()
+            print(f"Writing to temporary file: {temp_path}")
+            print(f"File name: {upload.filename}")
+            # print(f"File content: {file_content}")  # Uncomment to see content
+            f.write(file_content)
+        file_paths.append(temp_path)
+    uploaded_files = await drive_upload.upload_files(file_paths)  # should be async
+    # uploaded_files = await drive_upload.upload_files(input_data.file_names)  # should be async
     return {"uploaded_files": uploaded_files}
 
 @router.get("/list_folders")
@@ -106,52 +133,143 @@ async def refresh_token():
         return credentials_json
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read credentials: {str(e)}")
-
 @router.post("/create_ait")
-async def create_ait(input_data: CreateAitInput):
-    """
-    Creates a UUID, builds an index from the given file names, and generates a system prompt.
-    """
+async def create_ait(
+    files: Optional[list[UploadFile]] = File(None),
+    file_names: Optional[List[str]] = Form(None),
+    task_or_prompt: str = Form(...),
+    destination: Literal["google", "local"] = Form("google")
+):
     ait_id = str(uuid.uuid4())
-
+    file_names_list = []
+    
+    # Validate inputs based on destination
+    if destination == "local":
+        if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
+            raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
+        
+        save_dir = f"./temp/{ait_id}"
+        os.makedirs(save_dir, exist_ok=True)
+        local_file_paths = []
+        
+        for upload in files:
+            if upload.filename:  # Check if file actually exists
+                file_path = os.path.join(save_dir, upload.filename)
+                file_content = await upload.read()
+                with open(file_path, "wb") as f:
+                    f.write(file_content)
+                local_file_paths.append(upload.filename)
+        
+        file_names_list = local_file_paths
+        
+    elif destination == "google":
+        if not file_names:
+            raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+        
+        # Handle both string and list inputs for file_names
+        if isinstance(file_names, str):
+            file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
+        else:
+            file_names_list = [name for name in file_names if name.strip()]
+        
+        if not file_names_list:
+            raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
+        
+        print(f"Parsed file names: {file_names_list}")
+    
+    # Rest of your code remains the same...
     # Build index with UUID and file names
-    index_response = await create_embeddings.process_and_build_index(ait_id, input_data.file_names, qdrant_collection='bib')  # should be async
+    index_response = await create_embeddings.process_and_build_index(
+        ait_id=ait_id,
+        file_names=file_names_list,
+        document_collection='bib',
+        destination=destination
+    )
+    
     if not index_response.get("status"):
         raise HTTPException(status_code=400, detail=index_response.get("message"))
-
+    
     # Generate prompt with UUID and task_or_prompt
-    prompt_response = await generate_prompt.generate_system_prompt(ait_id, input_data.task_or_prompt)  # should be async
+    prompt_response = await generate_prompt.generate_system_prompt(ait_id, task_or_prompt)
     if prompt_response.get('status') == 'failed':
         raise HTTPException(status_code=400, detail=prompt_response.get('message'))
     
     insert_document = {
         "status": True,
         "ait_id": ait_id,
-        "ait_description": str(input_data.task_or_prompt),
-        "file_names": list(input_data.file_names),
+        "ait_description": str(task_or_prompt),
+        "bib_file_names": file_names_list,
         "prompt_response": prompt_response.get('prompt')
     }
-
+    
     client = MongoDBClient()
-    doc_response = await client.insert(collection_name = "ait",doc = insert_document)  # should be async
+    doc_response = await client.insert(collection_name="ait", doc=insert_document)
     print(f"Document inserted with ID: {doc_response.get('inserted_id')}")
-
+    
     if doc_response.get("status"):
-        return {"status": True, "ait_id":ait_id}
-    else: 
+        temp_folder_path = os.path.join("temp", ait_id)
+        if os.path.exists(temp_folder_path):
+            try:
+                shutil.rmtree(temp_folder_path)
+                logging.info(f"Cleaned up temp folder: {temp_folder_path}")
+            except Exception as e:
+                logging.error(f"Error cleaning up temp folder: {e}")
+        return {"status": True, "ait_id": ait_id}
+    else:
         raise HTTPException(status_code=500, detail="Failed to insert document into MongoDB")
 
 @router.post("/create_embeddings")
-async def build_index_route(input_data: FileNamesInput):
+async def build_index_route(
+    files: Optional[list[UploadFile]] = File(None),
+    file_names: Optional[List[str]] = Form(None),
+    task_or_prompt: str = Form(...),
+    destination: Literal["google", "local"] = Form("google"),
+    document_collection: Literal["bib", "log"] = Form("bib"),
+    ait_id: str = Form(...),
+    ):
     """
     Builds an index from the given list of file names.pip install "langchain<0.1.0" "pydantic<2.0"
     """
     # Build index with UUID and file names
+    # Validate inputs based on destination
+    if destination == "local":
+        if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
+            raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
+        
+        save_dir = f"./temp/{ait_id}"
+        os.makedirs(save_dir, exist_ok=True)
+        local_file_paths = []
+        
+        for upload in files:
+            if upload.filename:  # Check if file actually exists
+                file_path = os.path.join(save_dir, upload.filename)
+                file_content = await upload.read()
+                with open(file_path, "wb") as f:
+                    f.write(file_content)
+                local_file_paths.append(upload.filename)
+        
+        file_names_list = local_file_paths
+        
+    elif destination == "google":
+        if not file_names:
+            raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+        
+        # Handle both string and list inputs for file_names
+        if isinstance(file_names, str):
+            file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
+        else:
+            file_names_list = [name for name in file_names if name.strip()]
+        
+        if not file_names_list:
+            raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
+        
     index_response = await create_embeddings.process_and_build_index(
-        input_data.ait_id, 
-        input_data.file_names, 
-        input_data.qdrant_collection
-    )  
+        ait_id=ait_id,
+        file_names=file_names_list,
+        document_collection='bib',
+        destination=destination
+    )
+
     if not index_response.get("status"):
         raise HTTPException(status_code=400, detail=index_response.get("message"))
 
@@ -161,11 +279,11 @@ async def search_route(input_data: QueryInput):
     Searches the index for the given query and returns ranked results.
     """
     response = await vector_search.search(
-        input_data.ait_id, 
-        input_data.query, 
-        input_data.qdrant_collection, 
-        input_data.limit, 
-        input_data.similarity_threshold
+        ait_id=input_data.ait_id, 
+        query=input_data.query, 
+        document_collection=input_data.document_collection, 
+        limit=input_data.limit, 
+        similarity_threshold=input_data.similarity_threshold
     )  
     if not response.get('status'):
         raise HTTPException(status_code=400, detail="No results found.")
@@ -193,7 +311,7 @@ async def delete_index(input_data: FileNamesInput):
         delete_response = await delete_embeddings.delete_file_index(
             input_data.ait_id, 
             input_data.file_names,
-            input_data.qdrant_collection
+            input_data.document_collection
         )
         if not delete_response.get("status"):
             raise HTTPException(status_code=400, detail=delete_response.get("message"))

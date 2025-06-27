@@ -2,12 +2,12 @@ from pydantic import BaseModel
 from typing import List
 
 class FileNamesInput(BaseModel):
-    qdrant_collection: str
+    document_collection: str
     ait_id: str
     file_names: List[str]
 
 class QueryInput(BaseModel):
-    qdrant_collection: str
+    document_collection: str
     ait_id:str
     query: str
     limit: int

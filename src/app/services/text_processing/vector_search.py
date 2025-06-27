@@ -35,18 +35,19 @@ from langchain_community.embeddings import SentenceTransformerEmbeddings
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 
-async def search(ait_id, query, qdrant_collection, limit=10, similarity_threshold=0.3):
+async def search(ait_id, query, document_collection, limit=10, similarity_threshold=0.3):
     embedding = SentenceTransformerEmbeddings(model_name=MODEL_NAME)
     query_vector = embedding.embed_query(query)
     qdrant_client = QdrantService(host=QDRANT_HOST, port=QDRANT_PORT)
 
     # Await the async search method
     search_result = await qdrant_client.search(
-        collection_name=qdrant_collection,
+        document_collection=document_collection,
         query_vector=query_vector,
         ait_id=ait_id,
         limit=limit,
     )
+    print(f"Search results: {search_result}")
     filtered_results = []
     for hit in search_result:
         if hit.score >=similarity_threshold:

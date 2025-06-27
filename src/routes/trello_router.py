@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
-from src.app.services.trello_auth.trello_auth_utils import generate_auth_url, save_token
+from src.app.services.trello_service.trello_auth import generate_auth_url, save_token
 from src.app.models.trello_auth_model import TrelloTokenPayload
 
 load_dotenv(override=True)
