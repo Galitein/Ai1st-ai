@@ -64,3 +64,16 @@ class QdrantService:
         )
 
 
+    async def drop_all_collections(self):
+        """
+        Drops all collections from the Qdrant database.
+        """
+        collections = await self.client.get_collections()
+        for collection in collections.collections:
+            await self.client.delete_collection(collection_name=collection.name)
+
+
+# qdrant_service = QdrantService(host="localhost", port=6333)
+
+# import asyncio
+# asyncio.run(qdrant_service.drop_all_collections())  # Example usage to drop all collections
