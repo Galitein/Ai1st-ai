@@ -12,7 +12,6 @@ from src.database.sql_record_manager import sql_record_manager
 from src.database.qdrant_service import QdrantService
 from src.app.services.google_service.drive_file_loader import load_documents
 from src.app.services.text_processing.local_file_loader import load_local_documents
-from src.app.services.text_processing.trello_file_loader import load_trello_documents
 
 load_dotenv()
 
@@ -51,6 +50,7 @@ async def process_and_build_index(ait_id, file_names, document_collection, desti
         )
         logging.info(f"Loaded {len(documents)} documents for indexing.")
     elif destination == "local":
+        print("-------------------------", file_names)
         documents = await load_local_documents(
             file_names=file_names, 
             ait_id=ait_id, 
@@ -58,11 +58,7 @@ async def process_and_build_index(ait_id, file_names, document_collection, desti
             logger=logging,
         )
         logging.info(f"Loaded {len(documents)} documents for indexing.")
-    elif destination == "trello":
-        documents = await load_trello_documents(
-            ait_id=ait_id
-        )
-        logging.info(f"Loaded {len(documents)} Trello documents for indexing.")
+
     # 2. Create Embeddings of the chunks
     embedding = SentenceTransformerEmbeddings(model_name=MODEL_NAME)
 

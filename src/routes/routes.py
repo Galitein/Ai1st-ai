@@ -139,7 +139,7 @@ async def create_ait(
     file_names: Optional[List[str]] = Form(None),
     task_or_prompt: str = Form(...),
     destination: Literal["google", "local"] = Form("google")
-    ):
+):
     ait_id = str(uuid.uuid4())
     file_names_list = []
     
@@ -222,11 +222,14 @@ async def create_ait(
 async def build_index_route(
     files: Optional[list[UploadFile]] = File(None),
     file_names: Optional[List[str]] = Form(None),
-    task_or_prompt: Optional[str] = Form(None),
-    destination: Literal["google", "local", "trello"] = Form("google"),
-    document_collection: Literal["bib", "log_diary", "log_trello"] = Form("bib"),
+    task_or_prompt: str = Form(...),
+    destination: Literal["google", "local"] = Form("google"),
+    document_collection: Literal["bib", "log"] = Form("bib"),
     ait_id: str = Form(...),
     ):
+    """
+    Builds an index from the given list of file names.pip install "langchain<0.1.0" "pydantic<2.0"
+    """
     # Build index with UUID and file names
     # Validate inputs based on destination
     if destination == "local":
@@ -259,13 +262,11 @@ async def build_index_route(
         
         if not file_names_list:
             raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
-    
-    elif destination == "trello":
-        file_names_list = []
+        
     index_response = await create_embeddings.process_and_build_index(
         ait_id=ait_id,
         file_names=file_names_list,
-        document_collection=document_collection,
+        document_collection='bib',
         destination=destination
     )
 
