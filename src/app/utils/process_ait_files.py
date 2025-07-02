@@ -163,7 +163,7 @@ async def create_ait_main(user_id,
             "id": ait_id,
             "user_id": int(user_id),
             "name": ait_name,
-            "system": prompt_response.get("prompt", ""),
+            "sys": prompt_response.get("prompt", ""),
             "pre": "",
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()

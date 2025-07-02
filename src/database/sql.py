@@ -1,4 +1,5 @@
-import asyncio
+import os
+from dotenv import load_dotenv
 import aiomysql
 from typing import Dict, List, Any, Optional
 import logging
@@ -7,8 +8,20 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+load_dotenv(override=True)
+
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = int(os.getenv("DB_PORT"))
+DB_USER = os.getenv("DB_USER") 
+DB_PASS = os.getenv("DB_PASS") 
+DB_NAME = os.getenv("DB_NAME")
+
 class AsyncMySQLDatabase:
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+    def __init__(self, host: str = DB_HOST,
+                port: int = DB_PORT,
+                user: str = DB_USER,
+                password: str = DB_PASS,
+                database: str = DB_NAME):
         self.host = host
         self.port = port
         self.user = user
@@ -102,6 +115,8 @@ class AsyncMySQLDatabase:
     async def select(self, table: str, columns: str = "*", where: str = None, 
                     params: tuple = None, order_by: str = None, limit: int = None) -> Optional[List[Dict[str, Any]]]:
         """Select records from table"""
+        await self.create_pool()
+        
         query = f"SELECT {columns} FROM {table}"
         
         if where:
@@ -116,6 +131,7 @@ class AsyncMySQLDatabase:
             logger.info(f"Select from {table} failed")
             return None
         logger.info(f"Selected {len(result)} row(s) from {table}")
+        await self.close_pool()
         return result
     
     async def select_one(self, table: str, columns: str = "*", where: str = None, 

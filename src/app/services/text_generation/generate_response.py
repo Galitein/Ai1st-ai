@@ -1,10 +1,9 @@
 import os
 import logging
-import asyncio
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from src.database.sql import AsyncMySQLDatabase
 
-from src.app.utils.prompts import system_prompt
 from src.app.services.text_processing.vector_search import search
 
 # Setup logging
@@ -24,6 +23,9 @@ api_key = os.getenv("OPENAI_API_KEY")
 # Initialize OpenAI async client
 client = AsyncOpenAI(api_key=api_key)
 
+db = AsyncMySQLDatabase()
+
+
 async def generate_chat_completion(ait_id:str, query:str):
     """
     Generate a chat completion using OpenAI's API.
@@ -37,8 +39,13 @@ async def generate_chat_completion(ait_id:str, query:str):
     try:
         logging.info("Starting chat completion generation.")
 
-        # Load the system prompt
-        prompt = system_prompt.SYSTEM_PROMPT
+        response = await db.select(table = "custom_gpts", columns="sys", where = f"id = '{ait_id}'", limit=1)
+        if not response or "sys" not in response[0]:
+            logging.error(f"SYS not found for ait id : {ait_id}")
+            raise Exception("SYS not defined or invalid ait id")
+        else:
+            prompt = response[0].get("sys", "")
+        
         logging.info("System prompt loaded successfully.")
 
         extracted_bib = await search(
@@ -48,7 +55,6 @@ async def generate_chat_completion(ait_id:str, query:str):
             limit=3,
             similarity_threshold=0.1
         )
-        print(f"Extracted bib: {extracted_bib}")
         if not extracted_bib.get("status"):
             logging.error("No results found for the query.")
             return {'status': False, 'message': "No results found for the query."}
@@ -60,7 +66,6 @@ async def generate_chat_completion(ait_id:str, query:str):
             limit=8,
             similarity_threshold=0.5
         )
-        print(f"Extracted log: {extracted_log}")
         if not extracted_log.get("status"):
             logging.error("No results found for the query.")
             return {'status': False, 'message': "No results found for the query."}
