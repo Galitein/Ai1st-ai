@@ -1,10 +1,12 @@
 import os
+import json
 import logging
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from src.database.sql import AsyncMySQLDatabase
 
 from src.app.services.text_processing.vector_search import search
+from src.app.services.trello_service.trello_document_search import search_trello_documents
 
 # Setup logging
 logging.basicConfig(
@@ -72,12 +74,16 @@ async def generate_chat_completion(ait_id:str, query:str):
         if not extracted_log.get("status"):
             logging.error("No results found for the query.")
             return {'status': False, 'message': "No results found for the query."}
+        
+        extract_trello_data = await search_trello_documents(query, ait_id)
 
-        context_results = extracted_bib.get("results", []) + extracted_log.get("results", [])
+        context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + extract_trello_data
         context_text = "\n\n".join(
                 f"File: {r.get('file_name', '')}\nContent: {r.get('page_content', '')}"
                 for r in context_results
             )
+        # context_text = 
+        # print(f"Context text: {context_text}")
         messages = [
             {"role": "system", "content": prompt},
             {"role": "user", "content": context_text},

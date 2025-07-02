@@ -12,7 +12,7 @@ from src.database.sql_record_manager import sql_record_manager
 from src.database.qdrant_service import QdrantService
 from src.app.services.google_service.drive_file_loader import load_documents
 from src.app.services.text_processing.local_file_loader import load_local_documents
-from src.app.services.text_processing.trello_file_loader import load_trello_documents
+from src.app.services.trello_service.trello_file_loader import load_trello_documents
 
 load_dotenv()
 
