@@ -2,6 +2,7 @@ import os
 import asyncio
 import httpx
 from dotenv import load_dotenv
+from src.app.services.trello_service.trello_utils import get_trello_api_key, get_trello_token
 load_dotenv()
 
 from langchain_core.documents import Document
@@ -341,8 +342,8 @@ async def load_trello_boards(trello_api, user_token):
         return e        
 
 async def load_trello_documents(ait_id, logger=None):
-    trello_api = os.getenv("TRELLO_API_KEY")
-    user_token = os.getenv("TRELLO_USER_TOKEN")
+    trello_api = await get_trello_api_key()
+    user_token = await get_trello_token(ait_it=ait_id)
     trello_board_documents = await load_trello_boards(
         trello_api = trello_api,
         user_token=user_token

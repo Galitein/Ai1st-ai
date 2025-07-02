@@ -39,7 +39,10 @@ async def generate_chat_completion(ait_id:str, query:str):
     try:
         logging.info("Starting chat completion generation.")
 
+        await db.create_pool()
         response = await db.select(table = "custom_gpts", columns="sys", where = f"id = '{ait_id}'", limit=1)
+        await db.close_pool()
+
         if not response or "sys" not in response[0]:
             logging.error(f"SYS not found for ait id : {ait_id}")
             raise Exception("SYS not defined or invalid ait id")

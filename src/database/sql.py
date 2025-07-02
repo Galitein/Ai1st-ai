@@ -115,7 +115,6 @@ class AsyncMySQLDatabase:
     async def select(self, table: str, columns: str = "*", where: str = None, 
                     params: tuple = None, order_by: str = None, limit: int = None) -> Optional[List[Dict[str, Any]]]:
         """Select records from table"""
-        await self.create_pool()
         
         query = f"SELECT {columns} FROM {table}"
         
@@ -131,7 +130,6 @@ class AsyncMySQLDatabase:
             logger.info(f"Select from {table} failed")
             return None
         logger.info(f"Selected {len(result)} row(s) from {table}")
-        await self.close_pool()
         return result
     
     async def select_one(self, table: str, columns: str = "*", where: str = None, 
