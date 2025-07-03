@@ -58,7 +58,7 @@ async def get_emails(params: EmailQueryParams = Depends()):
     Get emails with proper filtering and edge case handling.
     """
     response = await fetch_emails(
-        user_id=params.user_id,
+        ait_id=params.ait_id,
         start_date=params.start_date,
         end_date=params.end_date,
         from_email=params.from_email,
@@ -77,7 +77,7 @@ async def sync_emails(params: EmailQueryParams):
     Sync emails to MongoDB with proper filtering and edge case handling.
     """
     response = await sync_email_data(
-        user_id=params.user_id,
+        ait_id=params.ait_id,
         start_date=params.start_date,
         end_date=params.end_date,
         from_email=params.from_email,

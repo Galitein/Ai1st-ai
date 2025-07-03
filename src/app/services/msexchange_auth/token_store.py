@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from msal import ConfidentialClientApplication
-from motor.motor_asyncio import AsyncIOMotorClient
 import html2text
 import json
 from src.database.sql import AsyncMySQLDatabase 
@@ -13,14 +12,8 @@ AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 AZURE_SECRET_ID = os.getenv("AZURE_SECRET_VALUE")
 TENANT_ID = os.getenv("TENANT_ID")
 AUTHORITY = f"https://login.microsoftonline.com/common"
-MONGO_URI = os.getenv("MONGO_URI")
 
-# MongoDB setup for emails only
-mongo_client = AsyncIOMotorClient(MONGO_URI)
-db = mongo_client["ai1st_customgpt"]
-emails_collection = db["email_data"]
-
-# MySQL setup for token storage
+# MySQL setup for both token storage and email storage
 mysql_db = AsyncMySQLDatabase()
 
 GRAPH_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
@@ -78,11 +71,12 @@ async def save_token(ait_id, token_data):
             
     except Exception as e:
         print(f"Error saving token: {e}")
+    finally:
+        await mysql_db.close_pool()
 
 async def get_token(ait_id):
     """Get token data from MySQL user_services table"""
     try:
-
         service_id = await get_mse_service_id()
 
         await mysql_db.create_pool()
@@ -101,6 +95,8 @@ async def get_token(ait_id):
     except Exception as e:
         print(f"Error getting token: {e}")
         return None
+    finally:
+        await mysql_db.close_pool()
 
 async def refresh_access_token(ait_id : str):
     print(f"Going to generate new access token for user id : {ait_id}")
@@ -125,80 +121,131 @@ async def refresh_access_token(ait_id : str):
     print(f"Failed to generated user token for user id : {ait_id}")
     return None
 
-async def store_emails_in_mongodb(messages, user_id):
+async def store_emails_in_mysql(messages, ait_id):
     """
-    Store emails in MongoDB collection with duplicate prevention.
+    Store emails in MySQL user_email_content table with duplicate prevention.
     Returns tuple of (stored_count, skipped_count)
+    
+    This function handles both:
+    1. Fresh emails from Microsoft Graph API (original message structure)
+    2. Existing emails from your MongoDB structure (if migrating manually)
     """
     stored_count = 0
     skipped_count = 0
     
-    for message in messages:
-        try:
-            # Extract and format email data
-            email_document = {
-                "user_id": user_id,
-                "email_id": message.get("id", ""),
-                "flag": message.get("flag", {}),
-                "subject": message.get("subject", ""),
-                "sender_name": message.get("sender", {}).get("emailAddress", {}).get("name", ""),
-                "sender_address": message.get("sender", {}).get("emailAddress", {}).get("address", ""),
-                "inference_classification": message.get("inferenceClassification", ""),
-                "categories": message.get("categories", []),
-                "content": html2text.html2text(message.get("body", {}).get("content", "")).replace("\n", "    "),
-                "has_attachments": message.get("hasAttachments", False),
-                "is_read": message.get("isRead", False),
-                "received_datetime": message.get("receivedDateTime", ""),
-                "sync_timestamp": datetime.now(timezone.utc)
-            }
-            
-            # Parse and convert datetime fields
-            datetime_fields = ["createdDateTime", "lastModifiedDateTime", "sentDateTime"]
-            for field in datetime_fields:
-                if field in message and message[field]:
-                    try:
-                        # Parse the datetime string and convert to UTC datetime object
-                        dt_str = message[field]
-                        if dt_str.endswith('Z'):
-                            dt_obj = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                        else:
-                            dt_obj = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-                        
-                        # Map field names to more readable names
-                        field_mapping = {
-                            "createdDateTime": "created_datetime",
-                            "lastModifiedDateTime": "last_modified_datetime",
-                            "sentDateTime": "sent_datetime"
-                        }
-                        
-                        email_document[field_mapping.get(field, field)] = dt_obj
-                    except (ValueError, TypeError) as e:
-                        print(f"Error parsing datetime field {field}: {e}")
-                        email_document[field_mapping.get(field, field)] = None
-            
-            # Try to insert the document
+    try:
+        await mysql_db.create_pool()
+        
+        for message in messages:
             try:
-                # Use upsert to prevent duplicates based on email_id and user_id
-                result = await emails_collection.update_one(
-                    {"email_id": email_document["email_id"], "user_id": user_id},
-                    {"$set": email_document},
-                    upsert=True
+                
+                # Parse datetime fields from API format
+                def parse_api_datetime(dt_str):
+                    if not dt_str:
+                        return None
+                    try:
+                        if dt_str.endswith('Z'):
+                            return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                        else:
+                            return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                    except (ValueError, TypeError) as e:
+                        print(f"Error parsing datetime {dt_str}: {e}")
+                        return None
+                
+                flag_status = 'notFlagged'  # Default value
+                flag_data = message.get("flag", {})
+                if flag_data and flag_data.get("flagStatus") == "flagged":
+                    flag_status = 'flagged'
+                
+                categories = message.get("categories", [])
+                categories_json = json.dumps(categories) if categories else None
+                
+                content = ""
+                body_data = message.get("body", {})
+                if body_data and body_data.get("content"):
+                    content = html2text.html2text(body_data.get("content", "")).replace("\n", "    ")
+                
+                sender_data = message.get("sender", {})
+                sender_email_data = sender_data.get("emailAddress", {}) if sender_data else {}
+                sender_name = sender_email_data.get("name", "") if sender_email_data else ""
+                sender_address = sender_email_data.get("address", "") if sender_email_data else ""
+                
+                email_data = {
+                    "email_id": message.get("id", ""),
+                    "ait_id": ait_id,  # Changed from ait_id to ait_id to match your schema
+                    "categories": categories_json,
+                    "content": content,
+                    "created_datetime": parse_api_datetime(message.get("createdDateTime")),
+                    "flag_status": flag_status,
+                    "has_attachments": message.get("hasAttachments", False),
+                    "inference_classification": message.get("inferenceClassification", ""),
+                    "is_read": message.get("isRead", False),
+                    "last_modified_datetime": parse_api_datetime(message.get("lastModifiedDateTime")),
+                    "received_datetime": parse_api_datetime(message.get("receivedDateTime")),
+                    "sender_address": sender_address,
+                    "sender_name": sender_name,
+                    "sent_datetime": parse_api_datetime(message.get("sentDateTime")),
+                    "subject": message.get("subject", ""),
+                    "sync_timestamp": datetime.now(timezone.utc)
+                }
+                
+                # Debug print to check data extraction
+                print(f"Processing email: {email_data['subject'][:50]}...")
+                print(f"Categories: {categories}")
+                print(f"Content length: {len(content)}")
+                print(f"Has attachments: {email_data['has_attachments']}")
+                print(f"Sender: {sender_name} <{sender_address}>")
+                print(f"Created: {email_data['created_datetime']}")
+                print(f"Flag status: {flag_status}")
+                print("---")
+            
+                # Check if email already exists
+                existing_email = await mysql_db.select_one(
+                    table="user_email_content",
+                    columns="id",
+                    where="email_id = %s AND ait_id = %s",
+                    params=(email_data["email_id"], ait_id)
                 )
                 
-                if result.upserted_id:
-                    stored_count += 1
-                    print(f"Stored new email: {email_document['subject'][:50]}...")
-                else:
-                    skipped_count += 1
-                    print(f"Skipped duplicate email: {email_document['subject'][:50]}...")
+                if existing_email:
+                    # Update existing record
+                    update_data = {k: v for k, v in email_data.items() if k not in ["email_id", "ait_id"]}
+                    success = await mysql_db.update(
+                        table="user_email_content",
+                        data=update_data,
+                        where="email_id = %s AND ait_id = %s",
+                        where_params=(email_data["email_id"], ait_id)
+                    )
                     
-            except Exception as db_error:
-                print(f"Database error storing email {email_document.get('email_id', 'unknown')}: {db_error}")
+                    if success:
+                        print(f"Updated existing email: {email_data['subject'][:50]}...")
+                        stored_count += 1
+                    else:
+                        print(f"Failed to update email: {email_data['subject'][:50]}...")
+                        skipped_count += 1
+                else:
+                    # Insert new record
+                    success = await mysql_db.insert(
+                        table="user_email_content",
+                        data=email_data
+                    )
+                    
+                    if success:
+                        print(f"Stored new email: {email_data['subject'][:50]}...")
+                        stored_count += 1
+                    else:
+                        print(f"Failed to store email: {email_data['subject'][:50]}...")
+                        skipped_count += 1
+                    
+            except Exception as e:
+                print(f"Error processing email: {e}")
                 skipped_count += 1
+                continue
                 
-        except Exception as e:
-            print(f"Error processing email: {e}")
-            skipped_count += 1
-            continue
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        return 0, len(messages)
+    finally:
+        await mysql_db.close_pool()
     
-    return stored_count, skipped_count        
+    return stored_count, skipped_count

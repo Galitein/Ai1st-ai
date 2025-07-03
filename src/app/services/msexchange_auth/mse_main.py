@@ -8,7 +8,7 @@ from urllib.parse import quote
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from src.app.services.msexchange_auth.token_store import get_token, refresh_access_token, store_emails_in_mongodb
+from src.app.services.msexchange_auth.token_store import get_token, refresh_access_token, store_emails_in_mysql
 
 load_dotenv(override=True)
 
@@ -183,7 +183,7 @@ def build_graph_url(filters: dict) -> str:
             default_filter = f"receivedDateTime ge {(datetime.utcnow() - timedelta(days=DEFAULT_DAYS_RANGE)).strftime('%Y-%m-%d')}T00:00:00Z"
             return f"https://graph.microsoft.com/v1.0/me/messages?$filter={quote(default_filter)}&$top={filters['top']}&$orderby={filters['orderby']}"
 
-async def make_graph_request(url: str, headers: dict, user_id: str):
+async def make_graph_request(url: str, headers: dict, ait_id: str):
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -192,7 +192,7 @@ async def make_graph_request(url: str, headers: dict, user_id: str):
             if response.status_code == 200:
                 return response, None
             elif response.status_code == 401:
-                new_access_token = await refresh_access_token(user_id)
+                new_access_token = await refresh_access_token(ait_id)
                 headers = build_headers(new_access_token)
                 continue
             elif response.status_code == 403:
@@ -226,7 +226,7 @@ async def make_graph_request(url: str, headers: dict, user_id: str):
     
     return None, JSONResponse({"error": "Max retries exceeded."}, status_code=500)
 
-def process_graph_response(response_data: dict, filters: dict) -> dict:
+def process_graph_response(response_data: dict, filters: dict, b_sanitize:bool = True) -> dict:
     if "error" in response_data:
         error_code = response_data["error"].get("code", "Unknown")
         error_message = response_data["error"].get("message", "Unknown error")
@@ -258,13 +258,15 @@ def process_graph_response(response_data: dict, filters: dict) -> dict:
         messages = [msg for msg in messages if msg.get("from", {}).get("emailAddress", {}).get("address", "").lower() == filters['from_email'].lower()]
 
     sanitized_messages = []
-    for message in messages:
-        try:
-            sanitized_messages.append(sanitize_message(message))
-        except Exception as e:
-            print(f"Skipping malformed message: {e}")
-            continue
-
+    if b_sanitize:
+        for message in messages:
+            try:
+                sanitized_messages.append(sanitize_message(message))
+            except Exception as e:
+                print(f"Skipping malformed message: {e}")
+                continue
+    else:
+        sanitized_messages = messages
     return {
         "messages": sanitized_messages,
         "next_link": response_data.get("@odata.nextLink"),
@@ -272,7 +274,7 @@ def process_graph_response(response_data: dict, filters: dict) -> dict:
     }, None
 
 async def get_emails(
-    user_id: str = DEFAULT_USER_ID,
+    ait_id: str = DEFAULT_USER_ID,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     from_email: Optional[str] = None,
@@ -283,7 +285,7 @@ async def get_emails(
     next_url: Optional[str] = None
 ):
     # Get access token
-    token_data = await get_token(user_id)
+    token_data = await get_token(ait_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
 
@@ -309,7 +311,7 @@ async def get_emails(
         url = build_graph_url(filters)
 
     # Make API request
-    response, error_response = await make_graph_request(url, headers, user_id)
+    response, error_response = await make_graph_request(url, headers, ait_id)
     if error_response:
         return error_response
 
@@ -350,7 +352,7 @@ async def get_emails(
         }, status_code=500)
 
 async def sync_emails(
-    user_id: str = DEFAULT_USER_ID,
+    ait_id: str = DEFAULT_USER_ID,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     from_email: Optional[str] = None,
@@ -361,7 +363,7 @@ async def sync_emails(
     next_url: Optional[str] = None
 ):
     # Get access token
-    token_data = await get_token(user_id)
+    token_data = await get_token(ait_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
 
@@ -387,7 +389,7 @@ async def sync_emails(
         url = build_graph_url(filters)
 
     # Make API request
-    response, error_response = await make_graph_request(url, headers, user_id)
+    response, error_response = await make_graph_request(url, headers, ait_id)
     if error_response:
         return error_response
 
@@ -401,12 +403,12 @@ async def sync_emails(
             'unread_only': unread_only,
             'search': search,
             'top': top
-        })
+        }, b_sanitize=False)
         if error_response:
             return error_response
 
         # Store emails in MongoDB
-        stored_count, skipped_count = await store_emails_in_mongodb(result["messages"], user_id)
+        stored_count, skipped_count = await store_emails_in_mysql(result["messages"],ait_id )
 
         return {
             "success": True,

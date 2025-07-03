@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from fastapi import Query
 
 class EmailQueryParams(BaseModel):
-    user_id: Optional[str]
+    ait_id: Optional[str]
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     from_email: Optional[str] = None
