@@ -263,7 +263,6 @@ def process_graph_response(response_data: dict, filters: dict, b_sanitize:bool =
             try:
                 sanitized_messages.append(sanitize_message(message))
             except Exception as e:
-                print(f"Skipping malformed message: {e}")
                 continue
     else:
         sanitized_messages = messages

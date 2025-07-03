@@ -5,6 +5,16 @@ from msal import ConfidentialClientApplication
 import html2text
 import json
 from src.database.sql import AsyncMySQLDatabase 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("msexchange_token_store.log"),
+        logging.StreamHandler()
+    ]
+)
 
 load_dotenv(override=True)
 
@@ -23,7 +33,6 @@ msal_app = ConfidentialClientApplication(
     client_credential=AZURE_SECRET_ID,
     authority=AUTHORITY
 )
-
 
 async def get_mse_service_id():
     await mysql_db.create_pool()
@@ -70,7 +79,7 @@ async def save_token(ait_id, token_data):
             await mysql_db.insert(table="user_services", data=insert_data)
             
     except Exception as e:
-        print(f"Error saving token: {e}")
+        logging.error(f"Error saving token: {e}")
     finally:
         await mysql_db.close_pool()
 
@@ -93,32 +102,32 @@ async def get_token(ait_id):
         return None
         
     except Exception as e:
-        print(f"Error getting token: {e}")
+        logging.error(f"Error getting token: {e}")
         return None
     finally:
         await mysql_db.close_pool()
 
 async def refresh_access_token(ait_id : str):
-    print(f"Going to generate new access token for user id : {ait_id}")
+    logging.info(f"Going to generate new access token for user id : {ait_id}")
     user_token = await get_token(ait_id)
 
     if not user_token:
-        print("No token data found")
+        logging.info("No token data found")
         return None
 
     refresh_token = user_token.get("refresh_token")
     if not refresh_token:
-        print("Refresh token not found")
+        logging.info("Refresh token not found")
         return None
     
     result = msal_app.acquire_token_by_refresh_token(refresh_token, scopes=GRAPH_SCOPES)
 
     if "access_token" in result:
         await save_token(ait_id, result)
-        print(f"New token generated for user {ait_id}")
+        logging.info(f"New token generated for user {ait_id}")
         return result["access_token"]
 
-    print(f"Failed to generated user token for user id : {ait_id}")
+    logging.info(f"Failed to generated user token for user id : {ait_id}")
     return None
 
 async def check_email_duplicate(ait_id, subject, sent_datetime, sender_address):
@@ -137,7 +146,7 @@ async def check_email_duplicate(ait_id, subject, sent_datetime, sender_address):
         return existing_email is not None
         
     except Exception as e:
-        print(f"Error checking duplicate: {e}")
+        logging.error(f"Error checking duplicate: {e}")
         return False
 
 async def store_emails_in_mysql(messages, ait_id):
@@ -168,7 +177,7 @@ async def store_emails_in_mysql(messages, ait_id):
                         else:
                             return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
                     except (ValueError, TypeError) as e:
-                        print(f"Error parsing datetime {dt_str}: {e}")
+                        logging.error(f"Error parsing datetime {dt_str}: {e}")
                         return None
                 
                 flag_status = 'notFlagged'  # Default value
@@ -195,7 +204,7 @@ async def store_emails_in_mysql(messages, ait_id):
                 
                 # Enhanced duplicate check based on subject, sent_datetime, and sender_address
                 if await check_email_duplicate(ait_id, subject, sent_datetime, sender_address):
-                    print(f"Duplicate email found - Subject: '{subject[:50]}...', Sender: {sender_address}, Sent: {sent_datetime}")
+                    logging.info(f"Duplicate email found - Subject: '{subject[:50]}...', Sender: {sender_address}, Sent: {sent_datetime}")
                     skipped_count += 1
                     continue
                 
@@ -218,16 +227,6 @@ async def store_emails_in_mysql(messages, ait_id):
                     "sync_timestamp": datetime.now(timezone.utc)
                 }
                 
-                # Debug print to check data extraction
-                print(f"Processing email: {email_data['subject'][:50]}...")
-                print(f"Categories: {categories}")
-                print(f"Content length: {len(content)}")
-                print(f"Has attachments: {email_data['has_attachments']}")
-                print(f"Sender: {sender_name} <{sender_address}>")
-                print(f"Created: {email_data['created_datetime']}")
-                print(f"Flag status: {flag_status}")
-                print("---")
-            
                 # Check if email already exists by email_id (fallback check)
                 existing_email = await mysql_db.select_one(
                     table="user_email_content",
@@ -247,10 +246,10 @@ async def store_emails_in_mysql(messages, ait_id):
                     )
                     
                     if success:
-                        print(f"Updated existing email: {email_data['subject'][:50]}...")
+                        logging.info(f"Updated existing email: {email_data['subject'][:50]}...")
                         stored_count += 1
                     else:
-                        print(f"Failed to update email: {email_data['subject'][:50]}...")
+                        logging.info(f"Failed to update email: {email_data['subject'][:50]}...")
                         skipped_count += 1
                 else:
                     # Insert new record
@@ -260,19 +259,19 @@ async def store_emails_in_mysql(messages, ait_id):
                     )
                     
                     if success:
-                        print(f"Stored new email: {email_data['subject'][:50]}...")
+                        logging.info(f"Stored new email: {email_data['subject'][:50]}...")
                         stored_count += 1
                     else:
-                        print(f"Failed to store email: {email_data['subject'][:50]}...")
+                        logging.info(f"Failed to store email: {email_data['subject'][:50]}...")
                         skipped_count += 1
                     
             except Exception as e:
-                print(f"Error processing email: {e}")
+                logging.error(f"Error processing email: {e}")
                 skipped_count += 1
                 continue
                 
     except Exception as e:
-        print(f"Database connection error: {e}")
+        logging.error(f"Database connection error: {e}")
         return 0, len(messages)
     finally:
         await mysql_db.close_pool()
