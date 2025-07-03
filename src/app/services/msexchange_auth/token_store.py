@@ -121,14 +121,33 @@ async def refresh_access_token(ait_id : str):
     print(f"Failed to generated user token for user id : {ait_id}")
     return None
 
+async def check_email_duplicate(ait_id, subject, sent_datetime, sender_address):
+    """
+    Check if an email already exists based on subject, sent datetime, and sender address
+    Returns True if duplicate exists, False otherwise
+    """
+    try:
+        existing_email = await mysql_db.select_one(
+            table="user_email_content",
+            columns="id",
+            where="ait_id = %s AND subject = %s AND sent_datetime = %s AND sender_address = %s",
+            params=(ait_id, subject, sent_datetime, sender_address)
+        )
+        
+        return existing_email is not None
+        
+    except Exception as e:
+        print(f"Error checking duplicate: {e}")
+        return False
+
 async def store_emails_in_mysql(messages, ait_id):
     """
-    Store emails in MySQL user_email_content table with duplicate prevention.
+    Store emails in MySQL user_email_content table with enhanced duplicate prevention.
     Returns tuple of (stored_count, skipped_count)
     
     This function handles both:
     1. Fresh emails from Microsoft Graph API (original message structure)
-    2. Existing emails from your MongoDB structure (if migrating manually)
+    2. Enhanced duplicate checking based on subject, sent_datetime, and sender_address
     """
     stored_count = 0
     skipped_count = 0
@@ -170,6 +189,16 @@ async def store_emails_in_mysql(messages, ait_id):
                 sender_name = sender_email_data.get("name", "") if sender_email_data else ""
                 sender_address = sender_email_data.get("address", "") if sender_email_data else ""
                 
+                # Parse required fields for duplicate check
+                subject = message.get("subject", "")
+                sent_datetime = parse_api_datetime(message.get("sentDateTime"))
+                
+                # Enhanced duplicate check based on subject, sent_datetime, and sender_address
+                if await check_email_duplicate(ait_id, subject, sent_datetime, sender_address):
+                    print(f"Duplicate email found - Subject: '{subject[:50]}...', Sender: {sender_address}, Sent: {sent_datetime}")
+                    skipped_count += 1
+                    continue
+                
                 email_data = {
                     "email_id": message.get("id", ""),
                     "ait_id": ait_id,  # Changed from ait_id to ait_id to match your schema
@@ -184,8 +213,8 @@ async def store_emails_in_mysql(messages, ait_id):
                     "received_datetime": parse_api_datetime(message.get("receivedDateTime")),
                     "sender_address": sender_address,
                     "sender_name": sender_name,
-                    "sent_datetime": parse_api_datetime(message.get("sentDateTime")),
-                    "subject": message.get("subject", ""),
+                    "sent_datetime": sent_datetime,
+                    "subject": subject,
                     "sync_timestamp": datetime.now(timezone.utc)
                 }
                 
@@ -199,7 +228,7 @@ async def store_emails_in_mysql(messages, ait_id):
                 print(f"Flag status: {flag_status}")
                 print("---")
             
-                # Check if email already exists
+                # Check if email already exists by email_id (fallback check)
                 existing_email = await mysql_db.select_one(
                     table="user_email_content",
                     columns="id",
