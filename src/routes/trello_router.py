@@ -59,7 +59,7 @@ async def save_token_endpoint(payload: TrelloTokenPayload):
     Save the Trello token for the authenticated user
     """
     try:
-        success = await save_token(payload.ait_id, payload.token)
+        success = await save_token(payload.ait_id, {"token":payload.token})
         if success:
             return {"status": "success", "message": "Token saved successfully"}
         else:
