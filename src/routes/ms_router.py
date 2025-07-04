@@ -3,8 +3,8 @@ from dotenv import load_dotenv
 from msal import ConfidentialClientApplication
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
-from src.app.services.msexchange_auth.mse_main import get_emails as fetch_emails, sync_emails as sync_email_data
-from src.app.services.msexchange_auth.mse_token_store import save_token
+from src.app.services.ms_exchange.mse_main import get_emails as fetch_emails, sync_emails as sync_email_data
+from src.app.services.ms_exchange.mse_token_store import save_token
 from src.app.models.mse_email_models import EmailQueryParams
 
 load_dotenv(override=True)
