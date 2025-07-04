@@ -4,17 +4,17 @@ from msal import ConfidentialClientApplication
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from src.app.services.msexchange_auth.mse_main import get_emails as fetch_emails, sync_emails as sync_email_data
-from src.app.services.msexchange_auth.token_store import save_token
+from src.app.services.msexchange_auth.mse_token_store import save_token
 from src.app.models.mse_email_models import EmailQueryParams
 
 load_dotenv(override=True)
 
-ms_router = APIRouter(prefix="/ms_auth", tags=["MSExchange"])
+ms_router = APIRouter(prefix="/ms_exchange", tags=["MSExchange"])
 
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 AZURE_SECRET_ID = os.getenv("AZURE_SECRET_VALUE")
 TENANT_ID = os.getenv("TENANT_ID")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
+REDIRECT_URI = os.getenv("MSE_REDIRECT_URI")
 AUTHORITY = "https://login.microsoftonline.com/common"
 AUTH_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
 GRAPH_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
@@ -52,7 +52,7 @@ async def callback(request: Request):
     return JSONResponse({"error": result.get("error_description")})
 
 
-@ms_router.get("/me/emails")
+@ms_router.get("/email/get_emails")
 async def get_emails(params: EmailQueryParams = Depends()):
     """
     Get emails with proper filtering and edge case handling.
@@ -71,7 +71,7 @@ async def get_emails(params: EmailQueryParams = Depends()):
     return response
 
 
-@ms_router.post("/me/emails/sync")
+@ms_router.post("/email/sync_new_emails")
 async def sync_emails(params: EmailQueryParams):
     """
     Sync emails to MongoDB with proper filtering and edge case handling.

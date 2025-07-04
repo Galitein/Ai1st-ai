@@ -8,11 +8,11 @@ from urllib.parse import quote
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from src.app.services.msexchange_auth.token_store import get_token, refresh_access_token, store_emails_in_mysql
+from src.app.services.msexchange_auth.mse_token_store import get_token, refresh_access_token, store_emails_in_mysql
 
 load_dotenv(override=True)
 
-ms_router = APIRouter(prefix="/ms_auth")
+ms_router = APIRouter(prefix="/ms_exchange")
 
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 AZURE_SECRET_ID = os.getenv("AZURE_SECRET_VALUE")
