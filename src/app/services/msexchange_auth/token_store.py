@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from msal import ConfidentialClientApplication
 from motor.motor_asyncio import AsyncIOMotorClient
 import html2text
+import json
+from src.database.sql import AsyncMySQLDatabase 
 
 load_dotenv(override=True)
 
@@ -12,10 +14,15 @@ AZURE_SECRET_ID = os.getenv("AZURE_SECRET_VALUE")
 TENANT_ID = os.getenv("TENANT_ID")
 AUTHORITY = f"https://login.microsoftonline.com/common"
 MONGO_URI = os.getenv("MONGO_URI")
+
+# MongoDB setup for emails only
 mongo_client = AsyncIOMotorClient(MONGO_URI)
 db = mongo_client["ai1st_customgpt"]
-collection = db["ms_token_data"]
 emails_collection = db["email_data"]
+
+# MySQL setup for token storage
+mysql_db = AsyncMySQLDatabase()
+
 GRAPH_SCOPES = ["Mail.ReadWrite","Calendars.ReadWrite","Contacts.ReadWrite"]
 
 msal_app = ConfidentialClientApplication(
@@ -24,22 +31,80 @@ msal_app = ConfidentialClientApplication(
     authority=AUTHORITY
 )
 
-async def save_token(user_id, token_data):
 
-    await collection.update_one({"user_id": user_id},
-                                {"$set":{"user_token":token_data,
-                                         "updated_at": datetime.now(timezone.utc)},
-                                "$setOnInsert":{"created_at": datetime.now(timezone.utc)}
-                                        },
-                                upsert=True)
+async def get_mse_service_id():
+    await mysql_db.create_pool()
+    service_id = await mysql_db.select_one(table ="master_service", columns = "id", where= "service_name = 'MSExchange'")
+    await mysql_db.close_pool()
+    return service_id.get("id")
 
-async def get_token(user_id):
-    doc = await collection.find_one({"user_id":user_id})
-    return doc["user_token"] if doc else None
+async def save_token(ait_id, token_data):
+    """Save token data to MySQL user_services table"""
+    try:
+        service_id = await get_mse_service_id()
 
-async def refresh_access_token(user_id : str):
-    print(f"Going to generate new access token for user id : {user_id}")
-    user_token = await get_token(user_id)
+        await mysql_db.create_pool()
+        
+        auth_secret_json = json.dumps(token_data)
+        current_time = datetime.now(timezone.utc)
+        
+        existing_record = await mysql_db.select_one(
+            table="user_services",
+            where="custom_gpt_id = %s AND service_id = %s",
+            params=(ait_id, service_id)
+        )
+        
+        if existing_record:
+            update_data = {
+                "auth_secret": auth_secret_json,
+                "updated_at": current_time
+            }
+            await mysql_db.update(
+                table="user_services",
+                data=update_data,
+                where="custom_gpt_id = %s AND service_id = %s",
+                where_params=(ait_id, service_id)
+            )
+        else:
+            # Insert new record
+            insert_data = {
+                "custom_gpt_id": ait_id,
+                "service_id": service_id,  
+                "auth_secret": auth_secret_json,
+                "created_at": current_time,
+                "updated_at": current_time
+            }
+            await mysql_db.insert(table="user_services", data=insert_data)
+            
+    except Exception as e:
+        print(f"Error saving token: {e}")
+
+async def get_token(ait_id):
+    """Get token data from MySQL user_services table"""
+    try:
+
+        service_id = await get_mse_service_id()
+
+        await mysql_db.create_pool()
+        
+        record = await mysql_db.select_one(
+            table="user_services",
+            where="custom_gpt_id = %s AND service_id = %s",
+            params=(ait_id, service_id)
+        )
+        
+        if record and record.get("auth_secret"):
+            # Parse JSON string back to dictionary
+            return json.loads(record["auth_secret"])
+        return None
+        
+    except Exception as e:
+        print(f"Error getting token: {e}")
+        return None
+
+async def refresh_access_token(ait_id : str):
+    print(f"Going to generate new access token for user id : {ait_id}")
+    user_token = await get_token(ait_id)
 
     if not user_token:
         print("No token data found")
@@ -53,11 +118,11 @@ async def refresh_access_token(user_id : str):
     result = msal_app.acquire_token_by_refresh_token(refresh_token, scopes=GRAPH_SCOPES)
 
     if "access_token" in result:
-        await save_token(user_id, result)
-        print(f"New token generated for user {user_id}")
+        await save_token(ait_id, result)
+        print(f"New token generated for user {ait_id}")
         return result["access_token"]
 
-    print(f"Failed to generated user token for user id : {user_id}")
+    print(f"Failed to generated user token for user id : {ait_id}")
     return None
 
 async def store_emails_in_mongodb(messages, user_id):

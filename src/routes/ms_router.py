@@ -27,11 +27,11 @@ msal_app = ConfidentialClientApplication(
 )
 
 @ms_router.get("/login")
-def login(user_id: str = Query(...)):
+def login(ait_id: str = Query(...)):
     auth_url = msal_app.get_authorization_request_url(
         scopes=AUTH_SCOPES,
         redirect_uri=REDIRECT_URI,
-        state=user_id 
+        state=ait_id
     )
     return RedirectResponse(auth_url)
 
@@ -47,7 +47,7 @@ async def callback(request: Request):
         redirect_uri=REDIRECT_URI
     )
     if "access_token" in result:
-        await save_token(state, result)  # state = user_id
+        await save_token(state, result) 
         return JSONResponse({"message": "Login successful, you can close this window"})
     return JSONResponse({"error": result.get("error_description")})
 
