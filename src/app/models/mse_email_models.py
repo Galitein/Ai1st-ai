@@ -12,3 +12,7 @@ class EmailQueryParams(BaseModel):
     top: Optional[int] = Query(10, ge=1, le=100)
     orderby: Optional[str] = "receivedDateTime desc"
     next_url: Optional[str] = None
+
+class EmailCBQuery(BaseModel):
+    ait_id:str
+    input_query: str

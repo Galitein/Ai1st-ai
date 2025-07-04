@@ -5,7 +5,8 @@ from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from src.app.services.ms_exchange.mse_main import get_emails as fetch_emails, sync_emails as sync_email_data
 from src.app.services.ms_exchange.mse_token_store import save_token
-from src.app.models.mse_email_models import EmailQueryParams
+from src.app.models.mse_email_models import EmailQueryParams, EmailCBQuery
+from src.app.services.ms_exchange.ms_email_chatbot import query_email_data, main as mse_chatbot_main
 
 load_dotenv(override=True)
 
@@ -88,3 +89,15 @@ async def sync_emails(params: EmailQueryParams):
         next_url=params.next_url
     )
     return response
+
+
+@ms_router.post("/email/query_email_data")
+async def mse_query_email(input_data:EmailCBQuery):
+    response = await query_email_data(input_data.ait_id, input_data.input_query)
+    return response
+
+
+@ms_router.post("/email/mse_chatbot")
+async def chat_mse_email(input_data:EmailCBQuery):
+    response = await mse_chatbot_main(input_data.ait_id, input_data.input_query)
+    return response    

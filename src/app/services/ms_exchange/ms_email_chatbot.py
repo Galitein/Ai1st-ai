@@ -33,7 +33,7 @@ async def get_schema_data_with_keys():
     logging.info("Schema formatting complete.")
     return result
 
-async def get_mail_data(ait_id, input_query):
+async def query_email_data(ait_id, input_query):
     logging.info(f"Generating SQL for input query with ait_id: {ait_id}")
     
     table_schema = await get_schema_data_with_keys()
@@ -59,7 +59,7 @@ async def get_mail_data(ait_id, input_query):
 async def main(ait_id, input_query):
     logging.info(f"Handling main workflow for ait_id: {ait_id}")
     
-    exe_result, generated_query = await get_mail_data(ait_id, input_query)
+    exe_result, generated_query = await query_email_data(ait_id, input_query)
 
     if not exe_result:
         logging.info("No data found for the given query.")
