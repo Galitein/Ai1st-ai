@@ -29,7 +29,6 @@ MANIFEST
 # Project-specific data and cache
 index/
 dummy_data/
-prompts/
 uv-x86_64-unknown-linux-gnu/
 testing_rohan.py
 
@@ -164,3 +163,4 @@ token.json
 
 uv-x86_64-unknown-linux-gnu.tar.gz
 test.py
+src/app/services/ms_exchange/user_email_content_schema.json
