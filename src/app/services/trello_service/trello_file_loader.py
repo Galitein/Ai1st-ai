@@ -26,9 +26,10 @@ async def load_trello_log(ait_id, document_collection, trello_board_documents,tr
     try:
         for board_id in trello_board_documents:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"https://trello.com/1/boards/{board_id}/actions?key={trello_api}&token={user_token}")
+                response = await client.get(f"https://trello.com/1/boards/{board_id}/actions?limit=1000&key={trello_api}&token={user_token}")
                 response.raise_for_status()
                 logs = response.json()
+                print(f"Loaded {len(logs)} logs for board {board_id}")
                 if asyncio.iscoroutine(logs):
                     logs = await logs
                 for log in logs:
@@ -93,7 +94,7 @@ async def load_trello_card(ait_id, document_collection, trello_board_documents, 
     try:
         for board_id in trello_board_documents:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"https://trello.com/1/boards/{board_id}/cards?key={trello_api}&token={user_token}")
+                response = await client.get(f"https://trello.com/1/boards/{board_id}/cards?limit=1000&key={trello_api}&token={user_token}")
                 response.raise_for_status()
                 cards_response = response.json()
                 if asyncio.iscoroutine(cards_response):
@@ -161,7 +162,7 @@ async def load_trello_boards(trello_api, user_token):
 
 async def load_trello_documents(ait_id, logger=None):
     trello_api = os.getenv("TRELLO_API_KEY")
-    user_token = os.getenv("TRELLO_USER_TOKEN")
+    user_token = os.getenv("TRELLO_TOKEN")
     trello_board_documents = await load_trello_boards(
         trello_api=trello_api,
         user_token=user_token

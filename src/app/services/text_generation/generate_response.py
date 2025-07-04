@@ -50,9 +50,58 @@ async def generate_chat_completion(ait_id:str, query:str):
             raise Exception("SYS not defined or invalid ait id")
         else:
             prompt = response[0].get("sys", "")
+
+#         prompt = """
+#         Trello Copilot Assistant System Prompt
+# You are a Trello Copilot Assistant, a specialized AI designed to answer user queries based exclusively on relevant extracted Trello data provided to you. Your primary role is to provide accurate, helpful answers using only the specific data segments that have been extracted and shared for each query.
+# Core Responsibilities
+
+# Query Response: Answer user questions using only the relevant extracted Trello data provided
+# Data-Only Analysis: Base all responses strictly on the provided extracted data segments
+# Precise Information: Provide accurate information without making assumptions beyond the given data
+# Clear Communication: Deliver concise, helpful answers that directly address the user's query
+
+# Data Sources
+# You will receive relevant extracted data for each query, which may include:
+
+# Board Data: Board names, descriptions, and metadata
+# Card Data: Card titles, descriptions, due dates, members, labels, positions, and status
+# List Data: List names, positions, and card organization
+# Member Data: User information, assignments, and roles
+# Trello Logs: Activity logs, changes, and historical data
+# User Data: User profiles and permissions
+
+# Response Guidelines
+
+# Use Only Provided Data: Base all responses exclusively on the extracted data provided for each query
+# Be Specific: Reference exact names, dates, and details from the provided data
+# No Assumptions: Do not infer or assume information not explicitly contained in the extracted data
+# Clear Limitations: If the query cannot be fully answered with the provided data, clearly state what information is missing
+# Direct Answers: Provide concise, direct responses that address the specific query
+# Structured Format: Organize information clearly using appropriate formatting when helpful
+
+# Do Not give the Ids. Just the names of the boards, cards, lists, members, etc.
+
+# Important Constraints
+
+# Data Boundaries: Only analyze and discuss information from the relevant extracted data provided
+# No External Knowledge: Do not supplement answers with general Trello knowledge or assumptions
+# Query Scope: Answer only what can be determined from the specific data extraction
+# Missing Information: If asked about data not provided in the extraction, clearly state "This information is not available in the provided data"
+# Accuracy First: Ensure all responses are factually accurate based on the extracted data
+
+# Response Format
+
+# Direct: Answer the query directly using the provided data
+# Factual: State only what is explicitly shown in the extracted data
+# Clear: Use clear, professional language
+# Concise: Avoid unnecessary elaboration beyond what the data supports
+# Honest: Acknowledge when data is insufficient to fully answer a query
+#         """
         
         logging.info("System prompt loaded successfully.")
 
+        # Search in 'bib' collection
         extracted_bib = await search(
             ait_id=ait_id,
             query=query,
@@ -61,32 +110,37 @@ async def generate_chat_completion(ait_id:str, query:str):
             similarity_threshold=0.1
         )
         if not extracted_bib.get("status"):
-            logging.error("No results found for the query.")
-            return {'status': False, 'message': "No results found for the query."}
-        
+            logging.error(f"No results found for the query in 'bib' collection: {extracted_bib.get('message', '')}")
+            return {'status': False, 'message': "No results found for the query in 'bib' collection."}
+
+        # Search in Trello log collection (fix collection name if needed)
+        # trello_log_collection = "log_diary"  # <-- Change this if your collection is named differently
         extracted_log = await search(
             ait_id=ait_id,
             query=query,
-            document_collection="log",
+            document_collection="log_diary",
             limit=8,
             similarity_threshold=0.5
         )
         if not extracted_log.get("status"):
-            logging.error("No results found for the query.")
-            return {'status': False, 'message': "No results found for the query."}
-        
-        extract_trello_data = await search_trello_documents(query, ait_id)
+            logging.error(f"No results found for the query in '{trello_log_collection}' collection: {extracted_log.get('message', '')}")
+            return {'status': False, 'message': f"No results found for the query in '{trello_log_collection}' collection."}
 
-        context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + extract_trello_data
-        context_text = "\n\n".join(
-                f"File: {r.get('file_name', '')}\nContent: {r.get('page_content', '')}"
-                for r in context_results
-            )
-        # context_text = 
-        # print(f"Context text: {context_text}")
+        # Search Trello documents
+        try:
+            extract_trello_data = await search_trello_documents(query, ait_id)
+            logging.info(f"Extracted Trello data: {extract_trello_data}")
+        except Exception as e:
+            logging.error(f"Error searching Trello documents: {str(e)}")
+            extract_trello_data = {}
+
+        trello_data_item = [v for k, v in extract_trello_data.items()]
+        context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + trello_data_item
+        logging.info(f"Context results: {context_results}")
+
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": context_text},
+            {"role": "user", "content": json.dumps(context_results, indent=2)},
             {"role": "user", "content": query}
         ]
         logging.info("Conversation history prepared.")
@@ -97,7 +151,7 @@ async def generate_chat_completion(ait_id:str, query:str):
             model="gpt-4.1",
             messages=messages,
             temperature=0.3,
-            max_tokens=200
+            max_tokens=4000
         )
 
         # Extract and return the generated response

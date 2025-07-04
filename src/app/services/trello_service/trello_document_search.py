@@ -44,13 +44,13 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
             # Search trello_log
             try:
                 trello_log_response = await client.post(
-                    "http://192.168.1.207:8088/search",
+                    "http://192.168.1.207:8081/search",
                     json={
                         "ait_id": ait_id,
                         "query": log_entity_string,
                         "document_collection": "trello_log",
                         "limit": 30,
-                        "similarity_threshold": 0.3
+                        "similarity_threshold": 0.4
                     }
                 )
                 if trello_log_response.status_code == 200:
@@ -64,7 +64,7 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
             # Search trello_card
             try:
                 trello_card_response = await client.post(
-                    "http://localhost:8088/search",
+                    "http://localhost:8081/search",
                     json={
                         "ait_id": ait_id,
                         "query": query,
@@ -84,7 +84,7 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
             # Search trello_member
             try:
                 trello_member_response = await client.post(
-                    "http://localhost:8088/search",
+                    "http://localhost:8081/search",
                     json={
                         "ait_id": ait_id,
                         "query": query,
@@ -139,5 +139,5 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
 # if __name__ == "__main__":
 #     import asyncio
 #     # Provide test values for query and ait_id
-#     result = asyncio.run(search_trello_documents("What are the tasks has be moved to Doing from Todo?", "string1"))
+#     result = asyncio.run(search_trello_documents("What task assigned to kaushal is doing?", "string1"))
 #     print(result)

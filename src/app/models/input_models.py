@@ -14,6 +14,7 @@ class QueryInput(BaseModel):
     similarity_threshold: float
 
 class TaskOrPromptInput(BaseModel):
+    ait_id: str
     task_or_prompt: str
 
 class FileListOutput(BaseModel):

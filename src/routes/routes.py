@@ -190,7 +190,7 @@ async def prompt_generator(input_data: TaskOrPromptInput):
     """
     Generates a system prompt based on the provided task or existing prompt.
     """
-    response = await generate_prompt.generate_system_prompt(input_data.task_or_prompt)  # should be async
+    response = await generate_prompt.generate_system_prompt(input_data.ait_id, input_data.task_or_prompt)  # should be async
     
     if response.get('status') == 'failed':
         raise HTTPException(status_code=400, detail=response.get('message'))
@@ -224,7 +224,7 @@ async def generate_query_response(input_data: ChatInput):
         input_data.query
     )
 
-    if response.get('status') == 'error':
+    if not response.get('status'):
         raise HTTPException(status_code=400, detail=response.get('message'))
     
     return response
