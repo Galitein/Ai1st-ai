@@ -28,13 +28,13 @@ def get_all_source_ids(namespace):
     )
     rows = cursor.fetchall()
     column_names = [description[0] for description in cursor.description]
-    # print(f"Column names: {column_names}")
+    print(f"Column names: {column_names}")
 
-    # # # Save to CSV
-    # # with open("dummy_data/trial.csv", 'w', newline='') as csvfile:
-    # #     writer = csv.writer(csvfile)
-    # #     writer.writerow(column_names)
-    # #     writer.writerows(rows)
+    # # Save to CSV
+    # with open("dummy_data/trial.csv", 'w', newline='') as csvfile:
+    #     writer = csv.writer(csvfile)
+    #     writer.writerow(column_names)
+    #     writer.writerows(rows)
 
     conn.close()
 

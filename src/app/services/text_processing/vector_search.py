@@ -47,6 +47,7 @@ async def search(ait_id, query, document_collection, limit=10, similarity_thresh
         ait_id=ait_id,
         limit=limit,
     )
+    print(f"Search results: {search_result}")
     filtered_results = []
     for hit in search_result:
         if hit.score >=similarity_threshold:
@@ -54,4 +55,5 @@ async def search(ait_id, query, document_collection, limit=10, similarity_thresh
                 "page_content": hit.payload.get("page_content", ''),
                 "file_name": hit.payload.get("metadata", {}).get("file_name", ""),
             })
+    print(f"Filtered results: {filtered_results}")
     return {"status": True, "results": filtered_results}

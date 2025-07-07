@@ -1,5 +1,8 @@
 import os
 import json
+import uuid
+import shutil
+import logging
 
 from typing import Literal, List, Optional
 from dotenv import load_dotenv
@@ -12,6 +15,10 @@ from fastapi import (
     Form,
     Body
 )
+# from pydantic import BaseModel
+# from typing import List
+# from fastapi.responses import RedirectResponse, JSONResponse
+from urllib.parse import urlencode
 
 load_dotenv()
 
@@ -23,6 +30,7 @@ from src.app.services.google_service import (
     drive_download
 )
 from src.app.services.text_processing import (
+    create_embeddings, 
     vector_search,
     delete_embeddings
 )
@@ -36,10 +44,12 @@ from src.app.models.input_models import (
     FileNamesInput,
     QueryInput,
     TaskOrPromptInput,
+    FileListOutput,
+    CreateAitInput,
     ChatInput
 )
 
-from src.app.utils.process_ait_files import create_ait_main, create_embeddings_main
+from src.database.mongo import MongoDBClient
 
 router = APIRouter()
 
@@ -123,50 +133,145 @@ async def refresh_token():
         return credentials_json
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read credentials: {str(e)}")
-
 @router.post("/create_ait")
 async def create_ait(
-    user_id: int = Form(None),
-    ait_name: str = Form("Undefined"),
     files: Optional[list[UploadFile]] = File(None),
     file_names: Optional[List[str]] = Form(None),
     task_or_prompt: str = Form(...),
     destination: Literal["google", "local"] = Form("google")
 ):
-
-    if file_names and len(file_names) == 1:
-        file_names = [f.strip() for f in file_names[0].split(',')]
-
-    response = await create_ait_main(user_id,
-    ait_name,
-    files,
-    file_names,
-    task_or_prompt,
-    destination)
-
-    return response
+    ait_id = str(uuid.uuid4())
+    file_names_list = []
+    
+    # Validate inputs based on destination
+    if destination == "local":
+        if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
+            raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
+        
+        save_dir = f"./temp/{ait_id}"
+        os.makedirs(save_dir, exist_ok=True)
+        local_file_paths = []
+        
+        for upload in files:
+            if upload.filename:  # Check if file actually exists
+                file_path = os.path.join(save_dir, upload.filename)
+                file_content = await upload.read()
+                with open(file_path, "wb") as f:
+                    f.write(file_content)
+                local_file_paths.append(upload.filename)
+        
+        file_names_list = local_file_paths
+        
+    elif destination == "google":
+        if not file_names:
+            raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+        
+        # Handle both string and list inputs for file_names
+        if isinstance(file_names, str):
+            file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
+        else:
+            file_names_list = [name for name in file_names if name.strip()]
+        
+        if not file_names_list:
+            raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
+        
+        print(f"Parsed file names: {file_names_list}")
+    
+    # Rest of your code remains the same...
+    # Build index with UUID and file names
+    index_response = await create_embeddings.process_and_build_index(
+        ait_id=ait_id,
+        file_names=file_names_list,
+        document_collection='bib',
+        destination=destination
+    )
+    
+    if not index_response.get("status"):
+        raise HTTPException(status_code=400, detail=index_response.get("message"))
+    
+    # Generate prompt with UUID and task_or_prompt
+    prompt_response = await generate_prompt.generate_system_prompt(ait_id, task_or_prompt)
+    if prompt_response.get('status') == 'failed':
+        raise HTTPException(status_code=400, detail=prompt_response.get('message'))
+    
+    insert_document = {
+        "status": True,
+        "ait_id": ait_id,
+        "ait_description": str(task_or_prompt),
+        "bib_file_names": file_names_list,
+        "prompt_response": prompt_response.get('prompt')
+    }
+    
+    client = MongoDBClient()
+    doc_response = await client.insert(collection_name="ait", doc=insert_document)
+    print(f"Document inserted with ID: {doc_response.get('inserted_id')}")
+    
+    if doc_response.get("status"):
+        temp_folder_path = os.path.join("temp", ait_id)
+        if os.path.exists(temp_folder_path):
+            try:
+                shutil.rmtree(temp_folder_path)
+                logging.info(f"Cleaned up temp folder: {temp_folder_path}")
+            except Exception as e:
+                logging.error(f"Error cleaning up temp folder: {e}")
+        return {"status": True, "ait_id": ait_id}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to insert document into MongoDB")
 
 @router.post("/create_embeddings")
 async def build_index_route(
     files: Optional[list[UploadFile]] = File(None),
     file_names: Optional[List[str]] = Form(None),
-    task_or_prompt: Optional[str] = Form(None),
-    destination: Literal["google", "local", "trello"] = Form("google"),
-    document_collection: Literal["bib", "log_diary", "log_trello"] = Form("bib"),
+    task_or_prompt: str = Form(...),
+    destination: Literal["google", "local"] = Form("google"),
+    document_collection: Literal["bib", "log"] = Form("bib"),
     ait_id: str = Form(...),
     ):
-    
-    if file_names and len(file_names) == 1:
-        file_names = [f.strip() for f in file_names[0].split(',')]
+    """
+    Builds an index from the given list of file names.pip install "langchain<0.1.0" "pydantic<2.0"
+    """
+    # Build index with UUID and file names
+    # Validate inputs based on destination
+    if destination == "local":
+        if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
+            raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
+        
+        save_dir = f"./temp/{ait_id}"
+        os.makedirs(save_dir, exist_ok=True)
+        local_file_paths = []
+        
+        for upload in files:
+            if upload.filename:  # Check if file actually exists
+                file_path = os.path.join(save_dir, upload.filename)
+                file_content = await upload.read()
+                with open(file_path, "wb") as f:
+                    f.write(file_content)
+                local_file_paths.append(upload.filename)
+        
+        file_names_list = local_file_paths
+        
+    elif destination == "google":
+        if not file_names:
+            raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+        
+        # Handle both string and list inputs for file_names
+        if isinstance(file_names, str):
+            file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
+        else:
+            file_names_list = [name for name in file_names if name.strip()]
+        
+        if not file_names_list:
+            raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
+        
+    index_response = await create_embeddings.process_and_build_index(
+        ait_id=ait_id,
+        file_names=file_names_list,
+        document_collection='bib',
+        destination=destination
+    )
 
-    response = await create_embeddings_main(files,
-    file_names,
-    task_or_prompt,
-    destination,
-    document_collection,
-    ait_id)
-    return response
-    
+    if not index_response.get("status"):
+        raise HTTPException(status_code=400, detail=index_response.get("message"))
 
 @router.post("/search")
 async def search_route(input_data: QueryInput):
@@ -190,7 +295,7 @@ async def prompt_generator(input_data: TaskOrPromptInput):
     """
     Generates a system prompt based on the provided task or existing prompt.
     """
-    response = await generate_prompt.generate_system_prompt(input_data.ait_id, input_data.task_or_prompt)  # should be async
+    response = await generate_prompt.generate_system_prompt(input_data.task_or_prompt)  # should be async
     
     if response.get('status') == 'failed':
         raise HTTPException(status_code=400, detail=response.get('message'))
@@ -224,7 +329,7 @@ async def generate_query_response(input_data: ChatInput):
         input_data.query
     )
 
-    if not response.get('status'):
+    if response.get('status') == 'error':
         raise HTTPException(status_code=400, detail=response.get('message'))
     
     return response
