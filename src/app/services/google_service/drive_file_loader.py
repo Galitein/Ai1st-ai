@@ -27,6 +27,8 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
     if logger is None:
         logger = logging.getLogger(__name__)
     try:
+        if not os.path.exists(CREDENTIALS_PATH):
+            raise FileNotFoundError(f"Credentials file not found at {CREDENTIALS_PATH}")
         with open(CREDENTIALS_PATH, 'r') as cred_file:
             credentials_data = json.loads(cred_file.read())
         folder_id = credentials_data.get('folder_id', {}).get('folder_id', None)
@@ -34,7 +36,7 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
             raise ValueError("Missing 'folder_id' in credentials file.")
     except Exception as e:
         logger.error("Error loading credentials: %s", e)
-        return []
+        raise
 
     try:
         creds = Credentials.from_authorized_user_file(CREDENTIALS_PATH, SCOPES)
