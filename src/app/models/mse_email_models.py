@@ -9,7 +9,7 @@ class EmailQueryParams(BaseModel):
     from_email: Optional[str] = None
     unread_only: Optional[bool] = False
     search: Optional[str] = None
-    top: Optional[int] = Query(10, ge=1, le=100)
+    top: Optional[int] = Query(1000, ge=1, le=1500)
     orderby: Optional[str] = "receivedDateTime desc"
     next_url: Optional[str] = None
 
