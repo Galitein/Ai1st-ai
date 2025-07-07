@@ -4,8 +4,7 @@ import logging
 from urllib.parse import urlencode
 from datetime import datetime, timezone
 from src.database.sql import AsyncMySQLDatabase
-from src.app.services.trello_service.trello_utils import get_trello_api_key, get_trello_service_id
-
+from src.app.utils.trello_utils import get_trello_api_key, get_trello_service_id
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',

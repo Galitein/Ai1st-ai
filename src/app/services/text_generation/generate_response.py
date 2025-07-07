@@ -7,6 +7,7 @@ from src.database.sql import AsyncMySQLDatabase
 
 from src.app.services.text_processing.vector_search import search
 from src.app.services.trello_service.trello_document_search import search_trello_documents
+from src.app.utils.trello_utils import trello_system_prompt
 
 # Setup logging
 logging.basicConfig(
@@ -50,54 +51,6 @@ async def generate_chat_completion(ait_id:str, query:str):
             raise Exception("SYS not defined or invalid ait id")
         else:
             prompt = response[0].get("sys", "")
-
-#         prompt = """
-#         Trello Copilot Assistant System Prompt
-# You are a Trello Copilot Assistant, a specialized AI designed to answer user queries based exclusively on relevant extracted Trello data provided to you. Your primary role is to provide accurate, helpful answers using only the specific data segments that have been extracted and shared for each query.
-# Core Responsibilities
-
-# Query Response: Answer user questions using only the relevant extracted Trello data provided
-# Data-Only Analysis: Base all responses strictly on the provided extracted data segments
-# Precise Information: Provide accurate information without making assumptions beyond the given data
-# Clear Communication: Deliver concise, helpful answers that directly address the user's query
-
-# Data Sources
-# You will receive relevant extracted data for each query, which may include:
-
-# Board Data: Board names, descriptions, and metadata
-# Card Data: Card titles, descriptions, due dates, members, labels, positions, and status
-# List Data: List names, positions, and card organization
-# Member Data: User information, assignments, and roles
-# Trello Logs: Activity logs, changes, and historical data
-# User Data: User profiles and permissions
-
-# Response Guidelines
-
-# Use Only Provided Data: Base all responses exclusively on the extracted data provided for each query
-# Be Specific: Reference exact names, dates, and details from the provided data
-# No Assumptions: Do not infer or assume information not explicitly contained in the extracted data
-# Clear Limitations: If the query cannot be fully answered with the provided data, clearly state what information is missing
-# Direct Answers: Provide concise, direct responses that address the specific query
-# Structured Format: Organize information clearly using appropriate formatting when helpful
-
-# Do Not give the Ids. Just the names of the boards, cards, lists, members, etc.
-
-# Important Constraints
-
-# Data Boundaries: Only analyze and discuss information from the relevant extracted data provided
-# No External Knowledge: Do not supplement answers with general Trello knowledge or assumptions
-# Query Scope: Answer only what can be determined from the specific data extraction
-# Missing Information: If asked about data not provided in the extraction, clearly state "This information is not available in the provided data"
-# Accuracy First: Ensure all responses are factually accurate based on the extracted data
-
-# Response Format
-
-# Direct: Answer the query directly using the provided data
-# Factual: State only what is explicitly shown in the extracted data
-# Clear: Use clear, professional language
-# Concise: Avoid unnecessary elaboration beyond what the data supports
-# Honest: Acknowledge when data is insufficient to fully answer a query
-#         """
         
         logging.info("System prompt loaded successfully.")
 
@@ -135,13 +88,16 @@ async def generate_chat_completion(ait_id:str, query:str):
             extract_trello_data = {}
 
         trello_data_item = [v for k, v in extract_trello_data.items()]
-        context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + trello_data_item
-        logging.info(f"Context results: {context_results}")
+        logging.info(f"Trello data items: {trello_data_item}")
+        bib_log_context_results = extracted_bib.get("results", []) + extracted_log.get("results", [])
+        logging.info(f"Context results: {bib_log_context_results}")
 
         messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": json.dumps(context_results, indent=2)},
-            {"role": "user", "content": query}
+            {"role": "system", "content": prompt},  # Prompt 1
+            {"role": "user", "content": json.dumps(bib_log_context_results, indent=2)},  # Data 1
+            {"role": "system", "content": trello_system_prompt()},  # Prompt 2
+            {"role": "user", "content": json.dumps(trello_data_item, indent=2)},  # Data 2
+            {"role": "user", "content": query}  # User's actual query
         ]
         logging.info("Conversation history prepared.")
 
@@ -156,6 +112,7 @@ async def generate_chat_completion(ait_id:str, query:str):
 
         # Extract and return the generated response
         chat_response = response.choices[0].message
+        print(chat_response)
         logging.info("Chat completion generated successfully.")
         return {'status': True, 'message': chat_response}
 

@@ -2,24 +2,24 @@ import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
-from src.app.services.trello_service.trello_auth import generate_auth_url, save_token
+from src.app.services.trello_service import trello_auth, trello_document_search, trello_file_loader
 from src.app.models.trello_auth_model import TrelloTokenPayload
 
 load_dotenv(override=True)
 
-trello_auth_router = APIRouter(prefix="/trello", tags=["Trello"])
+trello_router = APIRouter(prefix="/trello", tags=["Trello"])
 API_BASE = os.getenv("BACKEND_API_URL", "http://localhost:8080")
 
-@trello_auth_router.get("/auth/start")
+@trello_router.get("/auth/start")
 async def auth_start(ait_id: str = Query(...)):
     """
     Redirects user to Trello for authentication, with ait_id passed in redirect URI
     """
-    url = await generate_auth_url(ait_id)
+    url = await trello_auth.generate_auth_url(ait_id)
     return RedirectResponse(url)
 
 
-@trello_auth_router.get("/auth/callback", response_class=HTMLResponse)
+@trello_router.get("/auth/callback", response_class=HTMLResponse)
 async def auth_callback(request: Request):
     ait_id = request.query_params.get("ait_id", "anonymous")
     html_with_user = f"""
@@ -53,16 +53,32 @@ async def auth_callback(request: Request):
     return HTMLResponse(content=html_with_user)
 
 
-@trello_auth_router.post("/auth/save-token")
+@trello_router.post("/auth/save-token")
 async def save_token_endpoint(payload: TrelloTokenPayload):
     """
     Save the Trello token for the authenticated user
     """
     try:
-        success = await save_token(payload.ait_id, {"token":payload.token})
+        success = await trello_auth.save_token(payload.ait_id, {"token":payload.token})
         if success:
             return {"status": "success", "message": "Token saved successfully"}
         else:
             return {"status": "error", "message": "Failed to save token"}
     except Exception as e:
         return {"status": "error", "message": "Internal server error"}
+
+@trello_router.post("/trello_document_search")
+async def trello_search(ait_id: str, query: str):
+    pass
+
+@trello_router.post("/trello_document_sync")
+async def trello_sync(ait_id: str):
+    """
+    Sync Trello documents for the authenticated user
+    """
+    try:
+        # Call the document search function
+        trello_documents = await trello_file_loader.load_trello_documents(ait_id=ait_id)
+        return {"status": True, "data": trello_documents}
+    except Exception as e:
+        raise {"status": False, "message": str(e)}

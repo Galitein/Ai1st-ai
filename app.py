@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from src.routes.routes import router
 from src.routes.ms_router import ms_router
-from src.routes.trello_router import trello_auth_router
+from src.routes.trello_routers import trello_router
 
 app = FastAPI()
 # CORS configuration
@@ -17,7 +17,7 @@ app.add_middleware(
 # Include routes
 app.include_router(router)
 app.include_router(ms_router)
-app.include_router(trello_auth_router)
+app.include_router(trello_router)
 
 if __name__ == "__main__":
     import asyncio

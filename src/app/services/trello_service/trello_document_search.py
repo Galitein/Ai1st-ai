@@ -12,7 +12,7 @@ from src.app.services.trello_service.trello_query_extractor import trello_query_
 
 TRELLO_API_KEY = os.getenv("TRELLO_API_KEY")
 TRELLO_TOKEN = os.getenv("TRELLO_TOKEN")
-
+BACKEND_API_URL = os.getenv("BACKEND_API_URL")
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
             # Search trello_log
             try:
                 trello_log_response = await client.post(
-                    "http://192.168.1.207:8081/search",
+                    f"{BACKEND_API_URL}/search",
                     json={
                         "ait_id": ait_id,
                         "query": log_entity_string,
@@ -64,7 +64,7 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
             # Search trello_card
             try:
                 trello_card_response = await client.post(
-                    "http://localhost:8081/search",
+                    f"{BACKEND_API_URL}/search",
                     json={
                         "ait_id": ait_id,
                         "query": query,
@@ -84,7 +84,7 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
             # Search trello_member
             try:
                 trello_member_response = await client.post(
-                    "http://localhost:8081/search",
+                    f"{BACKEND_API_URL}/search",
                     json={
                         "ait_id": ait_id,
                         "query": query,

@@ -17,6 +17,8 @@ from src.app.utils.trello_utils import (
     get_trello_members,
 )
 
+from src.app.services.trello_service import trello_auth 
+
 async def load_trello_log(ait_id, document_collection, trello_board_documents,trello_api, user_token):
     """
     Converts Trello logs to a list of Document objects for embedding.
@@ -162,7 +164,9 @@ async def load_trello_boards(trello_api, user_token):
 
 async def load_trello_documents(ait_id, logger=None):
     trello_api = os.getenv("TRELLO_API_KEY")
-    user_token = os.getenv("TRELLO_TOKEN")
+    user_token = await trello_auth.get_token(ait_id)
+    if not user_token:
+        raise ValueError("User token not found. Please authenticate first.")
     trello_board_documents = await load_trello_boards(
         trello_api=trello_api,
         user_token=user_token

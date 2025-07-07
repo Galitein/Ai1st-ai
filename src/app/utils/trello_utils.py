@@ -3,6 +3,58 @@ import re
 import httpx
 import asyncio
 
+from src.database.sql import AsyncMySQLDatabase
+
+db = AsyncMySQLDatabase()
+
+async def get_trello_service_id():
+    await db.create_pool()
+    service_id = await db.select_one(table ="master_service", columns = "id", where= "service_name = 'Trello'")
+    await db.close_pool()
+    return service_id.get("id")
+
+async def get_trello_token(ait_it: str) -> dict | None:
+    """
+    Fetch Trello auth data (stored as JSON) for the given user.
+    Returns a dictionary if found, or None.
+    """
+    service_id = await get_trello_service_id()
+    if not service_id:
+        return None
+
+    try:
+        await db.create_pool()
+
+        trello_token = await db.select_one(
+            table="user_services",
+            columns="auth_secret",
+            where="service_id = %s AND custom_gpt_id = %s AND deleted_at IS NULL",
+            params=(service_id, ait_it)
+        )
+
+        if trello_token:
+            return json.loads(trello_token.get("auth_secret"))
+        return None
+
+    except Exception as e:
+        return None
+
+    finally:
+        await db.close_pool()
+
+async def get_trello_api_key():
+    await db.create_pool()
+    service_name = "Trello"
+    key = "api_key"
+
+    trello_api_key = await db.select_one(
+        table="master_settings",
+        columns="value",
+        where=f"service = '{service_name}' AND `key` = '{key}'"
+    )
+    await db.close_pool()
+    return trello_api_key.get("value")
+
 async def get_trello_user_board(api_key, token):
     board_ids = []
     url = f"https://trello.com/1/members/me/boards?key={api_key}&token={token}"
@@ -305,102 +357,54 @@ def extract_json_from_response(content):
         print(f"Error decoding JSON from response: {e}")
         return None
 
+def trello_system_prompt():
+  return """
+Trello Copilot Assistant System Prompt
+You are also a Trello Copilot Assistant, a specialized AI designed to answer user queries based exclusively on relevant extracted Trello data provided to you. Your primary role is to provide accurate, helpful answers using only the specific data segments that have been extracted and shared for each query.
+Core Responsibilities
 
-# def build_log_text(log: dict) -> str:
-#     """
-#     Build a rich, human-readable string from a Trello log entry,
-#     including all relevant nested keys from the 'data' section.
-#     """
-#     parts = []
-#     data = log.get("data", {})
+Query Response: Answer user questions using only the relevant extracted Trello data provided
+Data-Only Analysis: Base all responses strictly on the provided extracted data segments
+Precise Information: Provide accurate information without making assumptions beyond the given data
+Clear Communication: Deliver concise, helpful answers that directly address the user's query
 
-#     if log.get("type"):
-#         parts.append(f"Action: {log['type']}")
+Data Sources
+You will receive relevant extracted data for each query, which may include:
 
-#     if data.get("idCard"):
-#         parts.append(f"Card ID: {data['idCard']}")
+Board Data: Board names, descriptions, and metadata
+Card Data: Card titles, descriptions, due dates, members, labels, positions, and status
+List Data: List names, positions, and card organization
+Member Data: User information, assignments, and roles
+Trello Logs: Activity logs, changes, and historical data
+User Data: User profiles and permissions
 
-#     if data.get("text"):
-#         parts.append(f"Text: {data['text']}")
+Response Guidelines
 
-#     if data.get("textData"):
-#         parts.append(f"TextData: {data['textData']}")
+Use Only Provided Data: Base all responses exclusively on the extracted data provided for each query
+Be Specific: Reference exact names, dates, and details from the provided data
+No Assumptions: Do not infer or assume information not explicitly contained in the extracted data
+Clear Limitations: If the query cannot be fully answered with the provided data, clearly state what information is missing
+Direct Answers: Provide concise, direct responses that address the specific query
+Structured Format: Organize information clearly using appropriate formatting when helpful
 
-#     card = data.get("card", {})
-#     if card:
-#         card_str = ", ".join([f"{k}: {v}" for k, v in card.items()])
-#         parts.append(f"Card: {card_str}")
+Do Not give the Ids. Just the names of the boards, cards, lists, members, etc.
 
-#     board = data.get("board", {})
-#     if board:
-#         board_str = ", ".join([f"{k}: {v}" for k, v in board.items()])
-#         parts.append(f"Board: {board_str}")
+Important Constraints
 
-#     lst = data.get("list", {})
-#     if lst:
-#         list_str = ", ".join([f"{k}: {v}" for k, v in lst.items()])
-#         parts.append(f"List: {list_str}")
+Data Boundaries: Only analyze and discuss information from the relevant extracted data provided
+No External Knowledge: Do not supplement answers with general Trello knowledge or assumptions
+Query Scope: Answer only what can be determined from the specific data extraction
+Missing Information: If asked about data not provided in the extraction, clearly state "This information is not available in the provided data"
+Accuracy First: Ensure all responses are factually accurate based on the extracted data
 
-#     old = data.get("old", {})
-#     if old:
-#         old_str = ", ".join([f"{k}: {v}" for k, v in old.items()])
-#         parts.append(f"Old: {old_str}")
+Response Format
 
-#     list_before = data.get("listBefore", {})
-#     if list_before:
-#         before_str = ", ".join([f"{k}: {v}" for k, v in list_before.items()])
-#         parts.append(f"ListBefore: {before_str}")
-#     list_after = data.get("listAfter", {})
-#     if list_after:
-#         after_str = ", ".join([f"{k}: {v}" for k, v in list_after.items()])
-#         parts.append(f"ListAfter: {after_str}")
-
-#     checklist = data.get("checklist", {})
-#     if checklist:
-#         checklist_str = ", ".join([f"{k}: {v}" for k, v in checklist.items()])
-#         parts.append(f"Checklist: {checklist_str}")
-
-#     attachment = data.get("attachment", {})
-#     if attachment:
-#         attachment_str = ", ".join([f"{k}: {v}" for k, v in attachment.items()])
-#         parts.append(f"Attachment: {attachment_str}")
-
-#     if data.get("desc"):
-#         parts.append(f"Description: {data['desc']}")
-
-#     if data.get("pos"):
-#         parts.append(f"Position: {data['pos']}")
-
-#     if data.get("dueComplete") is not None:
-#         parts.append(f"DueComplete: {data['dueComplete']}")
-
-#     if data.get("dateCompleted"):
-#         parts.append(f"DateCompleted: {data['dateCompleted']}")
-
-#     if data.get("idList"):
-#         parts.append(f"List ID: {data['idList']}")
-
-#     if data.get("idMember"):
-#         parts.append(f"Member ID: {data['idMember']}")
-
-#     if data.get("name"):
-#         parts.append(f"Name: {data['name']}")
-
-#     member = data.get("member", {})
-#     if member:
-#         member_str = ", ".join([f"{k}: {v}" for k, v in member.items()])
-#         parts.append(f"Member: {member_str}")
-
-#     member_creator = log.get("memberCreator", {})
-#     if member_creator.get("fullName"):
-#         parts.append(f"By: {member_creator['fullName']}")
-#     if member_creator.get("username"):
-#         parts.append(f"Username: {member_creator['username']}")
-
-#     if log.get("date"):
-#         parts.append(f"Date: {log['date']}")
-
-#     return " | ".join(parts)
+Direct: Answer the query directly using the provided data
+Factual: State only what is explicitly shown in the extracted data
+Clear: Use clear, professional language
+Concise: Avoid unnecessary elaboration beyond what the data supports
+Honest: Acknowledge when data is insufficient to fully answer a query
+        """
 
 def flatten_dict(d, parent_key='', sep='.'):
     items = []
