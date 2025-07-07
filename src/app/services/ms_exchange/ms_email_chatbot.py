@@ -2,7 +2,7 @@ import logging
 from src.app.utils.prompts.mse_email_prompts import GENERATE_SQL_QUERY_SYS, GENERATE_EMAIL_RESPONSE_SYS
 from src.app.utils.call_llm import call_chatgpt
 from src.app.utils.create_db_table_schema import get_or_create_schema_json
-from src.database.sql import AsyncMySQLDatabase
+from src.database.sql import AsyncMySQLDatabase, sanitize_and_validate_query
 
 db = AsyncMySQLDatabase()
 
@@ -10,7 +10,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("call_llm.log"),
+        logging.FileHandler("ms_email_chatbot.log"),
         logging.StreamHandler()
     ]
 )
@@ -40,21 +40,47 @@ async def query_email_data(ait_id, input_query):
 
     generate_query_sys_prompt = GENERATE_SQL_QUERY_SYS.format(table_schema=table_schema)
     generate_query_user_input = f"Here is the user query : {input_query}\nHere is ait_di : {ait_id}"
-    
-    response = await call_chatgpt(generate_query_sys_prompt, generate_query_user_input)
-    logging.info("SQL generation from LLM completed.")
 
-    if ait_id not in response["prompt"]:
-        logging.warning("AIT ID not found in the generated SQL query.")
-        return [], response["prompt"]
+    max_retries = 3
 
-    logging.info("Executing generated SQL query.")
-    await db.create_pool()
-    exe_result = await db.execute_query(response["prompt"].strip())
-    await db.close_pool()
-    logging.info("SQL query execution complete.")
+    for i in range(max_retries):
+        try:
+        
+            response = await call_chatgpt(generate_query_sys_prompt, generate_query_user_input)
+            sql_query = response["prompt"]
+            logging.info("SQL generation from LLM completed.: "+sql_query)
 
-    return exe_result, response["prompt"]
+            if sql_query.lower().startswith("sorry"):
+                return [], "Sorry, Cannot process this request"
+
+            if ait_id not in sql_query :
+                logging.warning("AIT ID not found in the generated SQL query.")
+                raise Exception("AIT ID not found in the generated SQL query.")
+
+            logging.info("Validating generated SQL query.: "+ sql_query)
+            if not sanitize_and_validate_query(sql_query):
+                logging.info("Generated SQL query validation Failed.")
+                raise Exception("Error: This generated query failed query validation may contain some non allowed operations")
+
+            logging.info("Generated SQL query validation passed.")
+
+            logging.info("Executing generated SQL query.")
+            await db.create_pool()
+            exe_result = await db.execute_query(sql_query.strip())
+            await db.close_pool()
+            logging.info("SQL query execution complete.")
+
+            return exe_result, sql_query
+
+        except Exception as e :
+            if i < max_retries-1:
+                generate_query_user_input += f"""This was the {i+1} attempt out of 3, 
+                this was the previous generated query : {sql_query}
+                here is the error it caused: {str(e)[-100:]}
+                If you can solve this issue by only modifying the query nothing else, then and then only generate the new query based on the previous provided instructions if you cannot, simplly return "sorry" """
+            else:
+                return [], "" 
+    return [], sql_query
 
 async def main(ait_id, input_query):
     logging.info(f"Handling main workflow for ait_id: {ait_id}")

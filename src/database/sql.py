@@ -1,8 +1,11 @@
 import os
-from dotenv import load_dotenv
-import aiomysql
-from typing import Dict, List, Any, Optional
+import re
 import logging
+import aiomysql
+import sqlparse
+from dotenv import load_dotenv
+from typing import Dict, List, Any, Optional
+from sqlparse.tokens import Keyword, DML, DDL, Comment, Whitespace, Literal, Name
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -64,8 +67,8 @@ class AsyncMySQLDatabase:
                     return result
         except Exception as e:
             logger.error(f"Error executing query: {e}")
-            return None
-    
+            raise e
+
     async def execute_non_query(self, query: str, params: tuple = None) -> bool:
         """Execute INSERT, UPDATE, DELETE queries and return status"""
         try:
@@ -169,3 +172,49 @@ class AsyncMySQLDatabase:
             return True
         return False
 
+def sanitize_and_validate_query(query: str) -> bool:
+
+    if not isinstance(query, str) or not query.strip():
+        return False
+
+    query_stripped = query.strip()
+
+    if ";" in query_stripped.rstrip(";"):
+        return False
+
+    if re.search(r"--|/\*|\*/", query_stripped):
+        return False
+
+    if re.search(r"\b(UNION|INTERSECT|EXCEPT)\b", query_stripped, re.IGNORECASE):
+        return False
+
+    parsed = sqlparse.parse(query_stripped)
+    if not parsed or len(parsed) != 1:
+        return False 
+
+    statement = parsed[0]
+
+    first_token = next((t for t in statement.tokens if not t.is_whitespace), None)
+    if not first_token or first_token.ttype is not DML or first_token.value.upper() != "SELECT":
+        return False
+
+    dangerous_keywords = {
+        "DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "TRUNCATE", "MERGE", "EXEC",
+        "CALL", "REPLACE", "GRANT", "REVOKE", "CREATE", "FUNCTION", "PROCEDURE", "DO"
+    }
+
+    for token in statement.flatten():
+        val = token.value.upper()
+
+        if token.ttype in {Whitespace, Comment, Literal.String.Single, Name, Literal.Number}:
+            continue
+
+        if token.ttype in {Keyword, DDL} and val in dangerous_keywords:
+            return False
+
+        if token.value == "(" and "SELECT" in token.parent.value.upper():
+            inner = token.parent.value.upper()
+            if re.search(r"\(\s*SELECT\s+", inner):
+                return False
+
+    return True

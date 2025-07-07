@@ -26,7 +26,7 @@ DEFAULT_USER_ID = "anonymous"
 MAX_TOP = 100
 MAX_SEARCH_LENGTH = 255
 MAX_DATE_RANGE_DAYS = 365
-DEFAULT_DAYS_RANGE = 30
+DEFAULT_DAYS_RANGE = 365
 
 # Helper functions
 def validate_date_format(date_str: str) -> bool:

@@ -29,3 +29,4 @@ uvicorn
 aiofiles
 python-multipart
 aiomysql
+sqlparse
