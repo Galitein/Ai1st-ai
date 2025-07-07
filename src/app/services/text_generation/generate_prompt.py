@@ -49,13 +49,6 @@ async def generate_system_prompt(ait_id: str, task_or_prompt: str):
         prompt = completion.choices[0].message.content
         logging.info("Prompt successfully generated.")
 
-        # Write the prompt to a file
-        file_name = "system_prompt.py"
-        file_path = os.path.join('src/app/utils/prompts', file_name)
-        with open(file_path, 'w') as file:
-            file.write(f'SYSTEM_PROMPT = """{prompt}"""\n')
-        logging.info(f"Prompt written to file: {file_path}")
-
         return {'status': True, 'prompt': prompt}
 
     except ValueError as ve:
