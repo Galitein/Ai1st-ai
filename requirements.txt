@@ -26,6 +26,3 @@ torch
 tqdm
 txtai
 uvicorn
-aiofiles
-python-multipart
-aiomysql

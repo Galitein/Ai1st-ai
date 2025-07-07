@@ -1,20 +1,19 @@
 from pydantic import BaseModel
 from typing import List
 
-class AitIdInput(BaseModel):
-    ait_id: str
-    
-class FileNamesInput(AitIdInput):
+class FileNamesInput(BaseModel):
     document_collection: str
+    ait_id: str
     file_names: List[str]
 
-class QueryInput(AitIdInput):
+class QueryInput(BaseModel):
     document_collection: str
+    ait_id:str
     query: str
     limit: int
     similarity_threshold: float
 
-class TaskOrPromptInput(AitIdInput):
+class TaskOrPromptInput(BaseModel):
     task_or_prompt: str
 
 class FileListOutput(BaseModel):
@@ -24,5 +23,6 @@ class CreateAitInput(BaseModel):
     file_names: List[str]
     task_or_prompt: str
 
-class ChatInput(AitIdInput):
+class ChatInput(BaseModel):
+    ait_id: str
     query: str
