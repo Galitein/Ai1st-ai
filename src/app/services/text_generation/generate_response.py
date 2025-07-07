@@ -112,7 +112,7 @@ async def generate_chat_completion(ait_id:str, query:str):
 
         # Extract and return the generated response
         chat_response = response.choices[0].message
-        print(chat_response)
+        logging.info(chat_response)
         logging.info("Chat completion generated successfully.")
         return {'status': True, 'message': chat_response}
 

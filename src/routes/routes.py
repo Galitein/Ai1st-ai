@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 
 from typing import Literal, List, Optional
 from dotenv import load_dotenv
@@ -71,9 +72,9 @@ async def upload_file(
         temp_path = f"/tmp/{upload.filename}"
         with open(temp_path, "wb") as f:
             file_content = await upload.read()
-            print(f"Writing to temporary file: {temp_path}")
-            print(f"File name: {upload.filename}")
-            # print(f"File content: {file_content}")  # Uncomment to see content
+            logging.info(f"Writing to temporary file: {temp_path}")
+            logging.info(f"File name: {upload.filename}")
+            # logging.info(f"File content: {file_content}")  # Uncomment to see content
             f.write(file_content)
         file_paths.append(temp_path)
     uploaded_files = await drive_upload.upload_files(file_paths)  # should be async
@@ -95,7 +96,7 @@ async def list_files_in_drive(folder_id: str):
     """
     Lists files in a specified Google Drive folder.
     """
-    print(f"Listing files in folder ID: {folder_id}")
+    logging.info(f"Listing files in folder ID: {folder_id}")
     response = await file_list.list_files_in_folder(folder_id)  # should be async
     if not response.get("status"):
         raise HTTPException(status_code=400, detail="Failed to list files")

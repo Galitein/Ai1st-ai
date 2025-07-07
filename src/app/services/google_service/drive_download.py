@@ -108,6 +108,6 @@ if __name__ == '__main__':
     result = asyncio.run(download_files(files_to_download))
 
     if result['status']:
-        print(f"✅ Successfully downloaded files: {result['files']}")
+        logging.info(f"✅ Successfully downloaded files: {result['files']}")
     else:
-        print("❌ Failed to download one or more files. Check logs.")
+        logging.error("❌ Failed to download one or more files. Check logs.")

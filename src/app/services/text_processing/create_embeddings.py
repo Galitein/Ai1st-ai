@@ -91,7 +91,7 @@ async def process_and_build_index(ait_id, file_names, document_collection, desti
         cleanup="scoped_full",  # or "full" for full sync
         source_id_key="source_id",  # Use a unique identifier for each document
     )
-    print(f"Indexing result: {result}")
+    logging.info(f"Indexing result: {result}")
     return {
         "status": True,
         "message": "Incremental Qdrant index updated.",

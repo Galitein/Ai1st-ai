@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 import sqlite3
 from langchain.indexes import SQLRecordManager
+import logging
 
 load_dotenv()
 
@@ -28,7 +29,7 @@ def get_all_source_ids(namespace):
     )
     rows = cursor.fetchall()
     column_names = [description[0] for description in cursor.description]
-    # print(f"Column names: {column_names}")
+    logging.info(f"Column names: {column_names}")
 
     # # # Save to CSV
     # # with open("dummy_data/trial.csv", 'w', newline='') as csvfile:
@@ -55,4 +56,4 @@ def delete_source_ids(namespace, group_ids):
     conn.close()
 
 
-get_all_source_ids("qdrant/fe0b75f3-cf75-4e4c-8b56-d73cf64b3a4b")  # Example usage
+# get_all_source_ids("qdrant/fe0b75f3-cf75-4e4c-8b56-d73cf64b3a4b")  # Example usage

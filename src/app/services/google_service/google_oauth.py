@@ -42,7 +42,7 @@ async def authenticate(request: Request):
     body = await request.json()
 
     code = body.get("code")
-    print(f"[{datetime.now().isoformat()}] Received code: {code}")
+    logging.info(f"Received code: {code}")
 
     try:
         # Exchange authorization code for tokens using postmessage flow
@@ -57,7 +57,7 @@ async def authenticate(request: Request):
 
         token_request = requests.post(token_url, data=data)
         token_response = token_request.json()
-        print(f"[{datetime.now().isoformat()}] Token response: {token_response}")
+        logging.info(f"Token response: {token_response}")
 
         access_token = token_response.get("access_token")
         id_token_str = token_response.get("id_token")
@@ -69,7 +69,7 @@ async def authenticate(request: Request):
 
         # Verify ID token
         id_info = id_token.verify_oauth2_token(id_token_str, google.auth.transport.requests.Request(), GOOGLE_CLIENT_ID)
-        print(f"[{datetime.now().isoformat()}] ID Token Info: {id_info}")
+        logging.info(f"ID Token Info: {id_info}")
 
         email = id_info.get("email")
         user_id = id_info.get("sub")
@@ -78,7 +78,7 @@ async def authenticate(request: Request):
         drive_url = "https://www.googleapis.com/drive/v3/files"
         headers = {"Authorization": f"Bearer {access_token}"}
         files_response = requests.get(drive_url, headers=headers).json()
-        print(f"[{datetime.now().isoformat()}] Drive files response: {files_response}")
+        logging.info(f"Drive files response: {files_response}")
 
         if "error" in files_response:
             raise HTTPException(status_code=400, detail=f"Failed to fetch Drive files: {files_response}")

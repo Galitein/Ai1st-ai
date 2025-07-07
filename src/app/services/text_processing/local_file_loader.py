@@ -2,6 +2,7 @@ import os
 import mimetypes
 from langchain_core.documents import Document
 from src.app.utils.helpers import chunk_text, load_content_local_file
+import logging
 
 async def load_local_documents(file_names, ait_id, document_collection, logger=None):
     """
@@ -10,7 +11,7 @@ async def load_local_documents(file_names, ait_id, document_collection, logger=N
     documents = []
     for file_name in file_names:
         try:
-            print(file_name)
+            logging.info(file_name)
             file_path = os.path.join("temp", ait_id, file_name)
             content_response = load_content_local_file(file_path, logger)
             content_chunks = content_response.get('content_chunks')

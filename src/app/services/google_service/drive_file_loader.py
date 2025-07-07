@@ -53,13 +53,11 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
             content_response = load_content_drive_file(drive_service, folder_id, file_name, logger)
             if not content_response:
                 continue
-            # preprocessed_content = page_content.replace('\n', ' ')
-            # chunks = chunk_text(preprocessed_content, max_tokens=200, overlap=20)
             logger.info(f"Loaded {len(content_response.get('content_chunks'))} chunks from file: {file_name}")
             content_chunks = content_response.get('content_chunks')
-            print(f"Content chunks: {len(content_chunks)}")
+            logger.info(f"Content chunks: {len(content_chunks)}")
             file_type = content_response.get('file_type')
-            print(f"Content type: {file_type}")
+            logger.info(f"Content type: {file_type}")
             if file_type in ("text", "audio") and isinstance(content_chunks, list):
                 for idx, chunk in enumerate(content_chunks):
                     documents.append(
