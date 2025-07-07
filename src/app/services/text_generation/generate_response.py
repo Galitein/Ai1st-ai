@@ -41,25 +41,30 @@ async def generate_chat_completion(ait_id:str, query:str):
     """
     try:
         logging.info("Starting chat completion generation.")
+        try:
+            await db.create_pool()
+            db_response = await db.select(table="custom_gpts", columns="*", where=f"id = '{ait_id}'", limit=1)
+            await db.close_pool()
+        except Exception as e:
+            logging.error(f"Database connection error: {str(e)}")
+            return {'status': False, 'message': f"Database connection error: {str(e)}"}
 
-        await db.create_pool()
-        response = await db.select(table = "custom_gpts", columns="sys", where = f"id = '{ait_id}'", limit=1)
-        await db.close_pool()
-
-        if not response or "sys" not in response[0]:
+        if not db_response or "sys" not in db_response[0]:
             logging.error(f"SYS not found for ait id : {ait_id}")
-            raise Exception("SYS not defined or invalid ait id")
+            return {'status': False, 'message': "SYS not defined or invalid ait id"}
         else:
-            prompt = response[0].get("sys", "")
+            system_prompt = db_response[0].get("sys", "")
+            pre_context = db_response[0].get("pre", "")
+
         
-        logging.info("System prompt loaded successfully.")
+        logging.info("SYS and PRE loaded successfully.")
 
         # Search in 'bib' collection
         extracted_bib = await search(
             ait_id=ait_id,
             query=query,
             document_collection="bib",
-            limit=3,
+            limit=10,
             similarity_threshold=0.1
         )
         if not extracted_bib.get("status"):
@@ -72,7 +77,7 @@ async def generate_chat_completion(ait_id:str, query:str):
             ait_id=ait_id,
             query=query,
             document_collection="log_diary",
-            limit=8,
+            limit=20,
             similarity_threshold=0.5
         )
         if not extracted_log.get("status"):
@@ -93,11 +98,11 @@ async def generate_chat_completion(ait_id:str, query:str):
         logging.info(f"Context results: {bib_log_context_results}")
 
         messages = [
-            {"role": "system", "content": prompt},  # Prompt 1
-            {"role": "user", "content": json.dumps(bib_log_context_results, indent=2)},  # Data 1
-            {"role": "system", "content": trello_system_prompt()},  # Prompt 2
-            {"role": "user", "content": json.dumps(trello_data_item, indent=2)},  # Data 2
-            {"role": "user", "content": query}  # User's actual query
+            {"role": "system", "content": f"{system_prompt}\n\n# Trello Data Handling\n{trello_system_prompt()}"},
+            {"role": "user", "content": json.dumps(bib_log_context_results, indent=2)},
+            {"role": "user", "content": "---BEGIN PERSONAL CONTEXT (PRE)---\n" + json.dumps(pre_context, indent=2) + "\n---END PERSONAL CONTEXT---"},
+            {"role": "user", "content": "---BEGIN TRELLO DATA---\n" + json.dumps(trello_data_item, indent=2) + "\n---END TRELLO DATA---"},
+            {"role": "user", "content": query}
         ]
         logging.info("Conversation history prepared.")
 
