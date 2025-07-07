@@ -132,6 +132,7 @@ async def create_ait(
     files: Optional[list[UploadFile]] = File(None),
     file_names: Optional[List[str]] = Form(None),
     task_or_prompt: str = Form(...),
+    pre_context: str = Form(...),
     destination: Literal["google", "local"] = Form("google")
 ):
 
@@ -143,6 +144,7 @@ async def create_ait(
     files,
     file_names,
     task_or_prompt,
+    pre_context,
     destination)
 
     return response
