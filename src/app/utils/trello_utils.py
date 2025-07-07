@@ -2,6 +2,7 @@ import json
 import re
 import httpx
 import asyncio
+import logging
 
 from src.database.sql import AsyncMySQLDatabase
 
@@ -69,7 +70,7 @@ async def get_trello_user_board(api_key, token):
                 if board_id:
                     board_ids.append(board_id)
     except Exception as e:
-        print(f"Error fetching Trello user boards: {e}")
+        logging.error(f"Error fetching Trello user boards: {e}")
     return board_ids
 
 async def get_trello_user(api_key, token):
@@ -81,7 +82,7 @@ async def get_trello_user(api_key, token):
             trello_user = response.json()
             return trello_user
     except Exception as e:
-        print(f"Error fetching Trello user: {e}")
+        logging.error(f"Error fetching Trello user: {e}")
         return None
 
 async def get_trello_members(board_ids, api_key, token):
@@ -94,7 +95,7 @@ async def get_trello_members(board_ids, api_key, token):
                 response.raise_for_status()
                 trello_members.append(response.json())
     except Exception as e:
-        print(f"Error fetching Trello board members: {e}")
+        logging.error(f"Error fetching Trello board members: {e}")
     return trello_members
 
 def read_metadata(filepath):
@@ -102,7 +103,7 @@ def read_metadata(filepath):
         with open(filepath, "r") as file:
             return file.read().strip()
     except Exception as e:
-        print(f"Error reading metadata file: {e}")
+        logging.error(f"Error reading metadata file: {e}")
         return ""
 
 def trello_extract_entities_prompt(user_data, members_data, trello_log_metadata, query):
@@ -351,10 +352,10 @@ def extract_json_from_response(content):
         elif len(objects) == 1:
             return json.loads(objects[0])
         else:
-            print("No JSON object found in response content.")
+            logging.warning("No JSON object found in response content.")
             return None
     except Exception as e:
-        print(f"Error decoding JSON from response: {e}")
+        logging.error(f"Error decoding JSON from response: {e}")
         return None
 
 def trello_system_prompt():

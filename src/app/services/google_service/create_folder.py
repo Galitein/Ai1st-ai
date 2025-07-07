@@ -82,6 +82,6 @@ if __name__ == '__main__':
 
     async def main():
         result = await get_or_create_drive_folder(folder_name, CREDENTIALS_PATH)
-        print(json.dumps(result, indent=2))
+        logging.info(json.dumps(result, indent=2))
 
     asyncio.run(main())

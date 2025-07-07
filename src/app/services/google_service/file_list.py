@@ -78,7 +78,7 @@ async def list_files_in_folder(parent_folder_id: str):
                     pageToken=page_token
                 ).execute()
             items = results.get('files', [])
-            print(f"Found {items} files in the folder.")
+            logging.info(f"Found {items} files in the folder.")
             files.extend({"id": item["id"], "name": item["name"], "file_type":item["mimeType"]} for item in items)
             page_token = results.get('nextPageToken', None)
             if not page_token:

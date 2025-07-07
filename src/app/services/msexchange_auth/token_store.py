@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from msal import ConfidentialClientApplication
@@ -77,7 +78,7 @@ async def save_token(ait_id, token_data):
             await mysql_db.insert(table="user_services", data=insert_data)
             
     except Exception as e:
-        print(f"Error saving token: {e}")
+        logging.error(f"Error saving token: {e}")
 
 async def get_token(ait_id):
     """Get token data from MySQL user_services table"""
@@ -99,30 +100,30 @@ async def get_token(ait_id):
         return None
         
     except Exception as e:
-        print(f"Error getting token: {e}")
+        logging.error(f"Error getting token: {e}")
         return None
 
 async def refresh_access_token(ait_id : str):
-    print(f"Going to generate new access token for user id : {ait_id}")
+    logging.info(f"Going to generate new access token for user id : {ait_id}")
     user_token = await get_token(ait_id)
 
     if not user_token:
-        print("No token data found")
+        logging.error("No token data found")
         return None
 
     refresh_token = user_token.get("refresh_token")
     if not refresh_token:
-        print("Refresh token not found")
+        logging.error("Refresh token not found")
         return None
     
     result = msal_app.acquire_token_by_refresh_token(refresh_token, scopes=GRAPH_SCOPES)
 
     if "access_token" in result:
         await save_token(ait_id, result)
-        print(f"New token generated for user {ait_id}")
+        logging.info(f"New token generated for user {ait_id}")
         return result["access_token"]
 
-    print(f"Failed to generated user token for user id : {ait_id}")
+    logging.error(f"Failed to generated user token for user id : {ait_id}")
     return None
 
 async def store_emails_in_mongodb(messages, user_id):
@@ -173,7 +174,7 @@ async def store_emails_in_mongodb(messages, user_id):
                         
                         email_document[field_mapping.get(field, field)] = dt_obj
                     except (ValueError, TypeError) as e:
-                        print(f"Error parsing datetime field {field}: {e}")
+                        logging.error(f"Error parsing datetime field {field}: {e}")
                         email_document[field_mapping.get(field, field)] = None
             
             # Try to insert the document
@@ -187,18 +188,18 @@ async def store_emails_in_mongodb(messages, user_id):
                 
                 if result.upserted_id:
                     stored_count += 1
-                    print(f"Stored new email: {email_document['subject'][:50]}...")
+                    logging.info(f"Stored new email: {email_document['subject'][:50]}...")
                 else:
                     skipped_count += 1
-                    print(f"Skipped duplicate email: {email_document['subject'][:50]}...")
+                    logging.info(f"Skipped duplicate email: {email_document['subject'][:50]}...")
                     
             except Exception as db_error:
-                print(f"Database error storing email {email_document.get('email_id', 'unknown')}: {db_error}")
+                logging.error(f"Database error storing email {email_document.get('email_id', 'unknown')}: {db_error}")
                 skipped_count += 1
                 
         except Exception as e:
-            print(f"Error processing email: {e}")
+            logging.error(f"Error processing email: {e}")
             skipped_count += 1
             continue
     
-    return stored_count, skipped_count        
+    return stored_count, skipped_count

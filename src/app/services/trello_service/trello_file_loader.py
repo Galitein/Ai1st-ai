@@ -1,6 +1,7 @@
 import os
 import asyncio
 import httpx
+import logging
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 
@@ -31,7 +32,7 @@ async def load_trello_log(ait_id, document_collection, trello_board_documents,tr
                 response = await client.get(f"https://trello.com/1/boards/{board_id}/actions?limit=1000&key={trello_api}&token={user_token}")
                 response.raise_for_status()
                 logs = response.json()
-                print(f"Loaded {len(logs)} logs for board {board_id}")
+                logging.info(f"Loaded {len(logs)} logs for board {board_id}")
                 if asyncio.iscoroutine(logs):
                     logs = await logs
                 for log in logs:
@@ -55,7 +56,7 @@ async def load_trello_log(ait_id, document_collection, trello_board_documents,tr
                         )
                     )
     except Exception as e:
-        print(f"Error loading Trello logs: {e}")
+        logging.error(f"Error loading Trello logs: {e}")
     return documents
 
 async def load_trello_user(ait_id, document_collection, trello_api, user_token):
@@ -84,7 +85,7 @@ async def load_trello_user(ait_id, document_collection, trello_api, user_token):
                 )
             )
     except Exception as e:
-        print(f"Error loading Trello user: {e}")
+        logging.error(f"Error loading Trello user: {e}")
     return documents
 
 async def load_trello_card(ait_id, document_collection, trello_board_documents, trello_api, user_token):
@@ -121,9 +122,9 @@ async def load_trello_card(ait_id, document_collection, trello_board_documents, 
                             }
                         )
                     )
-        print(f"length of board cards {len(documents)}")
+        logging.info(f"length of board cards {len(documents)}")
     except Exception as e:
-        print(f"Error loading Trello cards: {e}")
+        logging.error(f"Error loading Trello cards: {e}")
     return documents
 
 async def load_trello_member(ait_id, document_collection, trello_board_documents, trello_api, user_token):
@@ -149,15 +150,15 @@ async def load_trello_member(ait_id, document_collection, trello_board_documents
                         }
                     )
                 )
-        print(f"length of board members {len(documents)}")
+        logging.info(f"length of board members {len(documents)}")
     except Exception as e:
-        print(f"Error loading Trello members: {e}")
+        logging.error(f"Error loading Trello members: {e}")
     return documents
 
 async def load_trello_boards(trello_api, user_token):
     try:
         board_id = await get_trello_user_board(trello_api, user_token)
-        print(f"Board ids {board_id}")
+        logging.info(f"Board ids {board_id}")
         return board_id
     except Exception as e:
         return e        
@@ -177,7 +178,7 @@ async def load_trello_documents(ait_id, logger=None):
         trello_api=trello_api,
         user_token=user_token
     )
-    print(f"Loaded {len(trello_user_documents)} Trello user documents.")
+    logging.info(f"Loaded {len(trello_user_documents)} Trello user documents.")
     trello_card_documents = await load_trello_card(
         ait_id=ait_id,
         document_collection="trello_card",
@@ -185,7 +186,7 @@ async def load_trello_documents(ait_id, logger=None):
         trello_api=trello_api,
         user_token=user_token
     )
-    print(f"Loaded {len(trello_card_documents)} Trello card documents.")
+    logging.info(f"Loaded {len(trello_card_documents)} Trello card documents.")
     trello_log_documents = await load_trello_log(
         ait_id=ait_id,
         document_collection="trello_log",
@@ -193,7 +194,7 @@ async def load_trello_documents(ait_id, logger=None):
         trello_api=trello_api,
         user_token=user_token
     )
-    print(f"Loaded {len(trello_log_documents)} Trello log documents.")
+    logging.info(f"Loaded {len(trello_log_documents)} Trello log documents.")
     trello_member_documents = await load_trello_member(
         ait_id=ait_id,
         document_collection="trello_member",
@@ -201,9 +202,9 @@ async def load_trello_documents(ait_id, logger=None):
         trello_api=trello_api,
         user_token=user_token
     )
-    print(f"Loaded {len(trello_member_documents)} Trello member documents.")
+    logging.info(f"Loaded {len(trello_member_documents)} Trello member documents.")
     
     trello_documents = trello_user_documents + trello_card_documents + trello_log_documents + trello_member_documents
     
-    print(f"Total Trello documents loaded: {len(trello_user_documents) + len(trello_card_documents) + len(trello_log_documents) + len(trello_member_documents)}")
+    logging.info(f"Total Trello documents loaded: {len(trello_user_documents) + len(trello_card_documents) + len(trello_log_documents) + len(trello_member_documents)}")
     return trello_documents

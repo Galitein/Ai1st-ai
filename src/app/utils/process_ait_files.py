@@ -116,6 +116,7 @@ async def create_ait_main(user_id,
     files,
     file_names,
     task_or_prompt,
+    pre_context,
     destination):
     
     ait_id = str(uuid.uuid4())
@@ -164,7 +165,7 @@ async def create_ait_main(user_id,
             "user_id": int(user_id),
             "name": ait_name,
             "sys": prompt_response.get("prompt", ""),
-            "pre": "",
+            "pre": pre_context,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }

@@ -4,6 +4,7 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 import re
+import logging
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -13,7 +14,7 @@ def encode_image(image_path: str):
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode("utf-8")
     except Exception as e:
-        print(f"Error encoding image: {e}")
+        logging.error(f"Error encoding image: {e}")
         return None
 
 def image_to_text(image_path: str):
@@ -61,7 +62,7 @@ def image_to_text(image_path: str):
         try:
             image_json = json.loads(json_str)
         except Exception as e:
-            print(f"Could not parse JSON: {e}\nContent was:\n{content}")
+            logging.error(f"Could not parse JSON: {e}\nContent was:\n{content}")
             return ""
 
         extracted_text = image_json.get("extracted_text", "")
@@ -69,7 +70,7 @@ def image_to_text(image_path: str):
         text_response = extracted_text + "\n" + image_description
         return text_response.strip()
     except Exception as e:
-        print(f"Error extracting text from image: {e}")
+        logging.error(f"Error extracting text from image: {e}")
         return ""
 
 def audio_to_text(audio_path: str):
@@ -87,7 +88,7 @@ def audio_to_text(audio_path: str):
             )
         return translation.text
     except Exception as e:
-        print(f"Error extracting text from audio: {e}")
+        logging.error(f"Error extracting text from audio: {e}")
         return ""
 
 def video_to_text(video_path: str):
@@ -96,7 +97,7 @@ def video_to_text(video_path: str):
     Returns:
         str: Extracted text from video (not implemented).
     """
-    print("Video to text extraction is not implemented yet.")
+    logging.info("Video to text extraction is not implemented yet.")
     return ""
 
 # text = image_to_text("dummy_data/image.jpg")

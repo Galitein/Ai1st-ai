@@ -139,5 +139,5 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
 # if __name__ == "__main__":
 #     import asyncio
 #     # Provide test values for query and ait_id
-#     result = asyncio.run(search_trello_documents("What task assigned to kaushal is doing?", "string1"))
-#     print(result)
+#     # result = asyncio.run(search_trello_documents("What task assigned to kaushal is doing?", "string1"))
+#     # logging.info(result)

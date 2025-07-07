@@ -89,12 +89,12 @@ async def upload_files(file_names):
         return json.dumps({"status": False, "files": {}}, indent=4)
 
 
-if __name__ == '__main__':
-    import sys
-    files = ['README.md', 'requirements.txt']  # Replace with your file list
+# if __name__ == '__main__':
+#     import sys
+#     files = ['README.md', 'requirements.txt']  # Replace with your file list
 
-    async def main():
-        response = upload_files(files)
-        print("Response:", json.dumps(response, indent=2))
+#     async def main():
+#         response = upload_files(files)
+#         print("Response:", json.dumps(response, indent=2))
 
-    asyncio.run(main())
+#     asyncio.run(main())
