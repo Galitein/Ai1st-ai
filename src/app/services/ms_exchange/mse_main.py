@@ -1,14 +1,17 @@
 import os
+import json
 import re
 import requests
 import html2text
-from typing import Optional
+from typing import Optional, List, Dict
+import logging
 from dotenv import load_dotenv
 from urllib.parse import quote
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from src.app.services.ms_exchange.mse_token_store import get_token, refresh_access_token, store_emails_in_mysql
+from src.app.services.ms_exchange.mse_doc_processing import EmailVectorService
 
 load_dotenv(override=True)
 
@@ -27,6 +30,7 @@ MAX_TOP = 100
 MAX_SEARCH_LENGTH = 255
 MAX_DATE_RANGE_DAYS = 365
 DEFAULT_DAYS_RANGE = 365
+vector_service = EmailVectorService()
 
 # Helper functions
 def validate_date_format(date_str: str) -> bool:
@@ -272,83 +276,81 @@ def process_graph_response(response_data: dict, filters: dict, b_sanitize:bool =
         "total_count": len(sanitized_messages)
     }, None
 
-async def get_emails(
-    ait_id: str = DEFAULT_USER_ID,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    from_email: Optional[str] = None,
-    unread_only: Optional[bool] = False,
-    search: Optional[str] = None,
-    top: Optional[int] = Query(10, ge=1, le=MAX_TOP),
-    orderby: Optional[str] = "receivedDateTime desc",
-    next_url: Optional[str] = None
-):
-    # Get access token
-    token_data = await get_token(ait_id)
-    if not token_data:
-        return JSONResponse({"error": "User not authenticated."}, status_code=401)
 
-    access_token = token_data.get("access_token")
-    if not access_token:
-        return JSONResponse({"error": "Invalid access token."}, status_code=401)
 
-    headers = build_headers(access_token)
-
-    # Handle next_url for pagination
-    if next_url:
-        if not next_url.startswith("https://graph.microsoft.com"):
-            return JSONResponse({"error": "Invalid next_url provided."}, status_code=400)
-        url = next_url
-    else:
-        # Validate and prepare filters
-        filters, error_response = await validate_and_prepare_filters(
-            start_date, end_date, from_email, unread_only, search, top, orderby
-        )
-        if error_response:
-            return error_response
-        
-        url = build_graph_url(filters)
-
-    # Make API request
-    response, error_response = await make_graph_request(url, headers, ait_id)
-    if error_response:
-        return error_response
-
-    # Process response
-    try:
-        data = response.json()
-        result, error_response = process_graph_response(data, {
-            'start_date': start_date,
-            'end_date': end_date,
-            'from_email': from_email,
-            'unread_only': unread_only,
-            'search': search,
-            'top': top
-        })
-        if error_response:
-            return error_response
-
-        return {
-            **result,
-            "filters_applied": {
-                "start_date": start_date,
-                "end_date": end_date,
-                "from_email": from_email,
-                "unread_only": unread_only,
-                "search": search
+async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
+    """
+    Process email documents and create vector embeddings.
+    Returns processing statistics.
+    """
+    total_processed = 0
+    total_chunks_stored = 0
+    total_chunks_skipped = 0
+    
+    # Initialize vector collection
+    await vector_service.initialize_collection(ait_id = ait_id)
+    
+    for message in messages:
+        try:
+            # Parse datetime fields
+            def parse_api_datetime(dt_str):
+                if not dt_str:
+                    return None
+                try:
+                    if dt_str.endswith('Z'):
+                        return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                    else:
+                        return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                except (ValueError, TypeError):
+                    return None
+            
+            # Extract and clean content
+            content = ""
+            body_data = message.get("body", {})
+            if body_data and body_data.get("content"):
+                content = html2text.html2text(body_data.get("content", "")).replace("\n", "    ")
+            
+            # Extract sender information
+            sender_data = message.get("sender", {})
+            sender_email_data = sender_data.get("emailAddress", {}) if sender_data else {}
+            sender_name = sender_email_data.get("name", "") if sender_email_data else ""
+            sender_address = sender_email_data.get("address", "") if sender_email_data else ""
+            
+            # Prepare email data for vector processing
+            email_data = {
+                "email_id": message.get("id", ""),
+                "ait_id": ait_id,
+                "subject": message.get("subject", ""),
+                "sender_name": sender_name,
+                "sender_address": sender_address,
+                "received_datetime": parse_api_datetime(message.get("receivedDateTime")),
+                "sent_datetime": parse_api_datetime(message.get("sentDateTime")),
+                "content": content,
+                "has_attachments": message.get("hasAttachments", False),
+                "is_read": message.get("isRead", False),
+                "flag_status": message.get("flag", {}).get("flagStatus", "notFlagged"),
+                "categories": json.dumps(message.get("categories", [])),
+                "inference_classification": message.get("inferenceClassification", "")
             }
-        }
-
-    except ValueError as e:
-        return JSONResponse({
-            "error": "Failed to parse JSON response from Microsoft Graph API.",
-            "details": str(e)
-        }, status_code=500)
-    except Exception as e:
-        return JSONResponse({
-            "error": "Unexpected error processing response.",
-            "details": str(e)
-        }, status_code=500)
+            
+            # Create vector embeddings
+            chunks_stored, chunks_skipped = await vector_service.store_email_embeddings(email_data=email_data, ait_id=ait_id)
+            
+            total_chunks_stored += chunks_stored
+            total_chunks_skipped += chunks_skipped
+            total_processed += 1
+            
+            logging.info(f"Processed email {email_data['email_id']}: {chunks_stored} chunks stored, {chunks_skipped} skipped")
+            
+        except Exception as e:
+            logging.error(f"Error processing email document: {e}")
+            continue
+    
+    return {
+        "total_emails_processed": total_processed,
+        "total_chunks_stored": total_chunks_stored,
+        "total_chunks_skipped": total_chunks_skipped
+    }
 
 async def sync_emails(
     ait_id: str = DEFAULT_USER_ID,
@@ -406,13 +408,19 @@ async def sync_emails(
         if error_response:
             return error_response
 
-        # Store emails in MongoDB
-        stored_count, skipped_count = await store_emails_in_mysql(result["messages"],ait_id )
+        # Process emails and create vector embeddings
+        vector_stats = await process_email_documents(messages=result["messages"], ait_id=ait_id)
+        
+        # Store emails in MySQL
+        stored_count, skipped_count = await store_emails_in_mysql(result["messages"], ait_id)
 
         return {
             "success": True,
-            "stored_emails": stored_count,
-            "skipped_duplicates": skipped_count,
+            "mysql_storage": {
+                "stored_emails": stored_count,
+                "skipped_duplicates": skipped_count
+            },
+            "vector_processing": vector_stats,
             "next_link": result.get("next_link"),
             "total_processed": len(result["messages"]),
             "filters_applied": {

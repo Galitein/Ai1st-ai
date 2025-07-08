@@ -3,10 +3,9 @@ from dotenv import load_dotenv
 from msal import ConfidentialClientApplication
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
-from src.app.services.ms_exchange.mse_main import get_emails as fetch_emails, sync_emails as sync_email_data
+from src.app.services.ms_exchange.mse_main import sync_emails as sync_email_data
 from src.app.services.ms_exchange.mse_token_store import save_token
 from src.app.models.mse_email_models import EmailQueryParams, EmailCBQuery
-from src.app.services.ms_exchange.ms_email_chatbot import query_email_data, main as mse_chatbot_main
 
 load_dotenv(override=True)
 
@@ -52,30 +51,10 @@ async def callback(request: Request):
         return JSONResponse({"message": "Login successful, you can close this window"})
     return JSONResponse({"error": result.get("error_description")})
 
-
-@ms_router.get("/email/get_emails")
-async def get_emails(params: EmailQueryParams = Depends()):
-    """
-    Get emails with proper filtering and edge case handling.
-    """
-    response = await fetch_emails(
-        ait_id=params.ait_id,
-        start_date=params.start_date,
-        end_date=params.end_date,
-        from_email=params.from_email,
-        unread_only=params.unread_only,
-        search=params.search,
-        top=params.top,
-        orderby=params.orderby,
-        next_url=params.next_url
-    )
-    return response
-
-
 @ms_router.post("/email/sync_new_emails")
 async def sync_emails(params: EmailQueryParams):
     """
-    Sync emails to MongoDB with proper filtering and edge case handling.
+    Sync emails to MySQL and create vector embeddings in Qdrant with proper chunking.
     """
     response = await sync_email_data(
         ait_id=params.ait_id,
@@ -89,15 +68,3 @@ async def sync_emails(params: EmailQueryParams):
         next_url=params.next_url
     )
     return response
-
-
-@ms_router.post("/email/query_email_data")
-async def mse_query_email(input_data:EmailCBQuery):
-    response = await query_email_data(input_data.ait_id, input_data.input_query)
-    return response
-
-
-@ms_router.post("/email/mse_chatbot")
-async def chat_mse_email(input_data:EmailCBQuery):
-    response = await mse_chatbot_main(input_data.ait_id, input_data.input_query)
-    return response    
