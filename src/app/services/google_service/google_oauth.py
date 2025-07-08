@@ -36,6 +36,7 @@ CLIENT_FILE = os.getenv("CLIENT_FILE")
 REPO_NAME = os.getenv("REPO_NAME")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_FOLDER_ID = os.getenv("GOOGLE_FOLDER_ID")
 
 
 async def authenticate(request: Request):
@@ -57,7 +58,7 @@ async def authenticate(request: Request):
 
         token_request = requests.post(token_url, data=data)
         token_response = token_request.json()
-        logging.info(f"Token response: {token_response}")
+        # logging.info(f"Token response: {token_response}")
 
         access_token = token_response.get("access_token")
         id_token_str = token_response.get("id_token")
@@ -69,7 +70,7 @@ async def authenticate(request: Request):
 
         # Verify ID token
         id_info = id_token.verify_oauth2_token(id_token_str, google.auth.transport.requests.Request(), GOOGLE_CLIENT_ID)
-        logging.info(f"ID Token Info: {id_info}")
+        # logging.info(f"ID Token Info: {id_info}")
 
         email = id_info.get("email")
         user_id = id_info.get("sub")
@@ -95,7 +96,11 @@ async def authenticate(request: Request):
             "scopes": ["https://www.googleapis.com/auth/drive"],
             "universe_domain": "googleapis.com",
             "account": email,
-            "expiry": expiry_time.isoformat() + "Z"
+            "expiry": expiry_time.isoformat() + "Z",
+            "folder_id": {
+                "status": True,
+                "folder_id": GOOGLE_FOLDER_ID
+            }
         }
         
         # Save the response_payload to CREDENTIALS_PATH as JSON

@@ -28,7 +28,12 @@ class AsyncMySQLDatabase:
         self.password = password
         self.database = database
         self.pool = None
-    
+
+    async def select_one(self, table: str, columns: str = "*", where: str = None, params: tuple = None) -> Optional[Dict[str, Any]]:
+        """Select one record from table"""
+        result = await self.select(table, columns, where, params, limit=1)
+        return result[0] if result else None
+        
     async def create_pool(self, minsize: int = 1, maxsize: int = 10):
         """Create connection pool"""
         try:

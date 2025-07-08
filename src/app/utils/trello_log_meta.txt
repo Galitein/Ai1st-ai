@@ -1,0 +1,49 @@
+id: # Unique identifier for the Trello action/event.
+idMemberCreator: # ID of the member who performed the action.
+data: # Contains details about the action (card, board, list, text, etc.).
+appCreator: # Information about the app that created the action (if any).
+type: # Type of action (e.g., commentCard, updateCard, addMemberToCard, createCard).
+date: # Date and time when the action occurred (ISO8601 format).
+limits: # Limits for reactions or other features (may be null).
+memberCreator: # Details about the member who performed the action (id, name, avatar, username, etc.).
+member: # For actions involving a member (e.g., addMemberToCard), details about that member.
+
+# Nested keys in `data`:
+idCard: # ID of the card involved in the action.
+text: # Comment or description text added in the action.
+textData: # Additional data for text, such as emoji used in comments.
+card: # Card details (id, name, idShort, shortLink, etc.).
+board: # Board details (id, name, shortLink).
+list: # List details (id, name).
+old: # Previous values for update actions.
+listBefore: # List details before a move.
+listAfter: # List details after a move.
+checklist: # Checklist details (id, name).
+attachment: # Attachment details (id, name, url, etc.).
+desc: # Card description.
+pos: # Card position in the list.
+dueComplete: # Whether the card is marked as complete.
+dateCompleted: # Date and time when the card was completed.
+idList: # ID of the list the card belongs to.
+idMember: # ID of the member involved in the action.
+name: # Name of the card, list, board, checklist, or member.
+
+# Nested keys in `memberCreator` and `member`:
+activityBlocked: # Whether the member is blocked from activity.
+avatarHash: # Hash for the member's avatar image.
+avatarUrl: # URL to the member's avatar image.
+fullName: # Member's full name.
+idMemberReferrer: # ID of the member who referred this member (if any).
+initials: # Member's initials.
+nonPublic: # Non-public member data.
+nonPublicAvailable: # Whether non-public data is available.
+username: # Member's Trello username.
+
+# Other keys:
+reactions: # Limits for reactions (perAction, uniquePerAction, etc.).
+perAction: # Reaction limits per action.
+uniquePerAction: # Unique reaction limits per action.
+status: # Status of the limit (e.g., "ok").
+disableAt: # Threshold at which the feature is disabled.
+warnAt: # Threshold at which a warning is issued.
+dateLastEdited: # Last edited date for a comment or card.

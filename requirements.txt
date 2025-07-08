@@ -29,3 +29,6 @@ uvicorn
 aiofiles
 python-multipart
 aiomysql
+msal
+html2text
+motor

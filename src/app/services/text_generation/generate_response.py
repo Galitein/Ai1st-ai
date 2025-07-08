@@ -65,7 +65,7 @@ async def generate_chat_completion(ait_id:str, query:str):
             query=query,
             document_collection="bib",
             limit=10,
-            similarity_threshold=0.1
+            similarity_threshold=0.3
         )
         if not extracted_bib.get("status"):
             logging.error(f"No results found for the query in 'bib' collection: {extracted_bib.get('message', '')}")
@@ -112,7 +112,7 @@ async def generate_chat_completion(ait_id:str, query:str):
             model="gpt-4.1",
             messages=messages,
             temperature=0.3,
-            max_tokens=4000
+            max_tokens=5000
         )
 
         # Extract and return the generated response
