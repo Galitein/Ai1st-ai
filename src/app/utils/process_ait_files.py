@@ -6,7 +6,6 @@ import asyncio
 
 from datetime import datetime
 from src.database.sql import AsyncMySQLDatabase
-from src.database.qdrant_service import QdrantService
 
 from typing import Literal, List, Optional
 from dotenv import load_dotenv
@@ -118,11 +117,10 @@ async def create_ait_main(user_id,
     pre_context,
     destination):
     
-    # ait_id = str(uuid.uuid4())
+    ait_id = str(uuid.uuid4())
     ait_id = "df76f3df-764f-4fe0-9226-683e5647e6b6"
     file_names_list = []
-    qdrant_service = QdrantService(host="localhost", port=6333)
-    await qdrant_service.drop_all_collections()  # Example usage to drop all collections
+ # Example usage to drop all collections
     try:
         await db.create_pool()
     except Exception as e:
