@@ -2,6 +2,7 @@ import os
 import uuid
 import shutil
 import logging
+import asyncio
 
 from datetime import datetime
 from src.database.sql import AsyncMySQLDatabase
@@ -80,8 +81,6 @@ async def insert_custom_gpt_files(custom_gpt_id: str, file_names: List[str], fil
         logging.error(f"Error inserting custom_gpt_files: {str(e)}")
         return False
 
-
-
 async def delete_custom_gpt_files_by_gpt_id(custom_gpt_id: str) -> bool:
     """
     Delete all files for a specific custom GPT (rollback function)
@@ -110,7 +109,6 @@ async def delete_custom_gpt_files_by_gpt_id(custom_gpt_id: str) -> bool:
         logging.error(f"Error deleting custom_gpt_files: {str(e)}")
         return False
 
-
 async def create_ait_main(user_id,
     ait_name,
     files,
@@ -120,8 +118,9 @@ async def create_ait_main(user_id,
     destination):
     
     ait_id = str(uuid.uuid4())
+    ait_id = "df76f3df-764f-4fe0-9226-683e5647e6b6"
     file_names_list = []
-
+ # Example usage to drop all collections
     try:
         await db.create_pool()
     except Exception as e:
@@ -158,21 +157,46 @@ async def create_ait_main(user_id,
         prompt_response = await generate_prompt.generate_system_prompt(ait_id, task_or_prompt)
         if prompt_response.get('status') == 'failed':
             raise HTTPException(status_code=400, detail=prompt_response.get('message'))
-
         # Insert into custom_gpts table FIRST
-        custom_gpt_data = {
-            "id": ait_id,
-            "user_id": int(user_id),
-            "name": ait_name,
-            "sys": prompt_response.get("prompt", ""),
-            "pre": pre_context,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
-        }
+        # Check if ait_id exists
+        existing = await db.select_one(
+            table="custom_gpts",
+            columns="id",
+            where="id = %s",
+            params=(ait_id,)
+        )
 
-        insert_gpt_status = await db.insert("custom_gpts", custom_gpt_data)
-        if not insert_gpt_status:
-            raise HTTPException(status_code=500, detail="Failed to insert record into custom_gpts table")
+        if existing:
+            # Update existing record
+            update_status = await db.update(
+                table="custom_gpts",
+                data={
+                    "user_id": int(user_id),
+                    "name": ait_name,
+                    "sys": prompt_response.get("prompt", ""),
+                    "pre": pre_context,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                },
+                where="id = %s",
+                where_params=(ait_id,)
+            )
+            if not update_status:
+                raise HTTPException(status_code=500, detail="Failed to update record in custom_gpts table")
+        else:
+            # Insert new record
+            custom_gpt_data = {
+                "id": ait_id,
+                "user_id": int(user_id),
+                "name": ait_name,
+                "sys": prompt_response.get("prompt", ""),
+                "pre": pre_context,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            insert_gpt_status = await db.insert("custom_gpts", custom_gpt_data)
+            if not insert_gpt_status:
+                raise HTTPException(status_code=500, detail="Failed to insert record into custom_gpts table")
 
         # Then insert file records
         file_insert_success = await insert_custom_gpt_files(ait_id, file_names_list)
