@@ -72,8 +72,8 @@ async def download_files(file_names):
             files = results.get('files', [])
 
             if not files:
-                logging.warning("File not found: %s", file_name)
-                continue
+                logging.error("File not found: %s", file_name)
+                return {"status": False, "message": f"File '{file_name}' not found in Google Drive folder."}
 
             file_id = files[0]['id']
             logging.info("Downloading file '%s' (ID: %s)", file_name, file_id)

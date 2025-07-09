@@ -118,19 +118,19 @@ async def create_ait_main(user_id,
     destination):
     
     ait_id = str(uuid.uuid4())
-    ait_id = "df76f3df-764f-4fe0-9226-683e5647e6b6"
+    # ait_id = "df76f3df-764f-4fe0-9226-683e5647e6b6"
     file_names_list = []
  # Example usage to drop all collections
     try:
         await db.create_pool()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+        return {"status": False, "code": 500, "message": f"Database connection failed: {str(e)}"}
 
     try:
         # Handle destination logic
         if destination == "local":
             if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
-                raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
+                return {"status": False, "code": 400, "message": "Files must be provided for local uploads"}
             save_dir = f"./temp/{ait_id}"
             os.makedirs(save_dir, exist_ok=True)
             local_file_paths = []
@@ -145,18 +145,18 @@ async def create_ait_main(user_id,
 
         elif destination == "google":
             if not file_names:
-                raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+                return {"status": False, "code": 400, "message": "File names must be provided for Google Drive uploads"}
             if isinstance(file_names, str):
                 file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
             else:
                 file_names_list = [name for name in file_names if name.strip()]
             if not file_names_list:
-                raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
+                return {"status": False, "code": 400, "message": "At least one valid file name must be provided"}
 
         # Generate system prompt
         prompt_response = await generate_prompt.generate_system_prompt(ait_id, task_or_prompt)
-        if prompt_response.get('status') == 'failed':
-            raise HTTPException(status_code=400, detail=prompt_response.get('message'))
+        if not prompt_response.get('status'):
+            return {"status": False, "code": 400, "message": prompt_response.get('message')}
         # Insert into custom_gpts table FIRST
         # Check if ait_id exists
         existing = await db.select_one(
@@ -182,7 +182,7 @@ async def create_ait_main(user_id,
                 where_params=(ait_id,)
             )
             if not update_status:
-                raise HTTPException(status_code=500, detail="Failed to update record in custom_gpts table")
+                return {"status": False, "code": 500, "message": "Failed to update record in custom_gpts table"}
         else:
             # Insert new record
             custom_gpt_data = {
@@ -196,13 +196,13 @@ async def create_ait_main(user_id,
             }
             insert_gpt_status = await db.insert("custom_gpts", custom_gpt_data)
             if not insert_gpt_status:
-                raise HTTPException(status_code=500, detail="Failed to insert record into custom_gpts table")
+                return {"status": False, "code": 500, "message": "Failed to insert record into custom_gpts table"}
 
         # Then insert file records
         file_insert_success = await insert_custom_gpt_files(ait_id, file_names_list)
         if not file_insert_success:
             await db.delete("custom_gpts", "id = %s", (ait_id,))
-            raise HTTPException(status_code=500, detail="Failed to insert file records into database")
+            return {"status": False, "code": 500, "message": "Failed to insert file records into database"}
 
         # Now build index
         index_response = await create_embeddings.process_and_build_index(
@@ -214,7 +214,7 @@ async def create_ait_main(user_id,
         if not index_response.get("status"):
             await delete_custom_gpt_files_by_gpt_id(ait_id)
             await db.delete("custom_gpts", "id = %s", (ait_id,))
-            raise HTTPException(status_code=400, detail=index_response.get("message"))
+            return {"status": False, "code": 400, "message": index_response.get("message")}
 
         # Cleanup temp files
         temp_folder_path = os.path.join("temp", ait_id)
@@ -225,15 +225,13 @@ async def create_ait_main(user_id,
             except Exception as e:
                 logging.error(f"Error cleaning up temp folder: {e}")
 
-        return {"status": True, "ait_id": ait_id}
+        return {"status": True, "code": 200, "ait_id": ait_id}
 
-    except HTTPException:
-        raise
     except Exception as e:
         logging.error(f"Unexpected error in create_ait: {str(e)}")
         await delete_custom_gpt_files_by_gpt_id(ait_id)
         await db.delete("custom_gpts", "id = %s", (ait_id,))
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return {"status": False, "code": 500, "message": f"Internal server error: {str(e)}"}
     finally:
         await db.close_pool()
 
@@ -247,13 +245,13 @@ async def create_embeddings_main(files,
     try:
         await db.create_pool()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+        return {"status": False, "code": 500, "message": f"Database connection failed: {str(e)}"}
     
     try:
         # Validate inputs based on destination
         if destination == "local":
             if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
-                raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
+                return {"status": False, "code": 400, "message": "Files must be provided for local uploads"}
             
             save_dir = f"./temp/{ait_id}"
             os.makedirs(save_dir, exist_ok=True)
@@ -271,7 +269,7 @@ async def create_embeddings_main(files,
             
         elif destination == "google":
             if not file_names:
-                raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
+                return {"status": False, "code": 400, "message": "File names must be provided for Google Drive uploads"}
             
             if isinstance(file_names, str):
                 file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
@@ -279,7 +277,7 @@ async def create_embeddings_main(files,
                 file_names_list = [name for name in file_names if name.strip()]
             
             if not file_names_list:
-                raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
+                return {"status": False, "code": 400, "message": "At least one valid file name must be provided"}
         
         elif destination == "trello":
             file_names_list = []
@@ -287,7 +285,7 @@ async def create_embeddings_main(files,
         file_insert_success = await insert_custom_gpt_files(ait_id, file_names_list, document_collection)
         
         if not file_insert_success:
-            raise HTTPException(status_code=500, detail="Failed to insert file records into database")
+            return {"status": False, "code": 500, "message": "Failed to insert file records into database"}
             
         index_response = await create_embeddings.process_and_build_index(
             ait_id=ait_id,
@@ -298,16 +296,14 @@ async def create_embeddings_main(files,
 
         if not index_response.get("status"):
             await delete_custom_gpt_files_by_gpt_id(ait_id)
-            raise HTTPException(status_code=400, detail=index_response.get("message"))
+            return {"status": False, "code": 400, "message": index_response.get("message")}
             
-        return {"status": True, "ait_id": ait_id, "files_inserted": len(file_names_list)}
+        return {"status": True, "code": 200, "ait_id": ait_id, "files_inserted": len(file_names_list)}
         
-    except HTTPException:
-        raise
     except Exception as e:
         logging.error(f"Unexpected error in build_index_route: {str(e)}")
         await delete_custom_gpt_files_by_gpt_id(ait_id)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return {"status": False, "code": 500, "message": f"Internal server error: {str(e)}"}
     finally:
         await db.close_pool()
 

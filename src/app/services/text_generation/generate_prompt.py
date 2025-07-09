@@ -27,7 +27,7 @@ async def generate_system_prompt(ait_id: str, task_or_prompt: str):
         # Ensure the API key is set
         if not api_key:
             logging.error("OpenAI API key is not set in the environment variables.")
-            raise ValueError("OpenAI API key is not set in the environment variables.")
+            return {'status': False, 'message': "OpenAI API key is not set in the environment variables."}
 
         # Call the OpenAI API to generate the prompt asynchronously
         logging.info("Calling OpenAI API to generate the prompt.")

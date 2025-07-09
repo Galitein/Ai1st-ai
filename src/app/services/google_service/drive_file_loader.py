@@ -11,7 +11,7 @@ load_dotenv()
 CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH")
 SCOPES = os.getenv("SCOPES")
 
-async def load_documents(file_names, ait_id, document_collection, logger=None):
+async def load_google_documents(file_names, ait_id, document_collection, logger=None):
     """
     Loads and chunks documents from Google Drive.
 
@@ -22,7 +22,7 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
         document_collection (str): Qdrant sub_collection name.
 
     Returns:
-        list: List of Document objects.
+        dict: A dictionary with status and either documents or an error message.
     """
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
             raise ValueError("Missing 'folder_id' in credentials file.")
     except Exception as e:
         logger.error("Error loading credentials: %s", e)
-        raise
+        return {"status": False, "error": str(e)}
 
     try:
         creds = Credentials.from_authorized_user_file(CREDENTIALS_PATH, SCOPES)
@@ -44,15 +44,19 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
         logger.info("Google Drive service initialized.")
     except Exception as e:
         logger.error("Failed to initialize Drive API: %s", e)
-        return []
+        return {"status": False, "error": str(e)}
 
     documents = []
 
     for file_name in file_names:
         try:
             content_response = load_content_drive_file(drive_service, folder_id, file_name, logger)
+            # Handle if load_content_drive_file returns a tuple (e.g., (None, error))
+            if isinstance(content_response, tuple):
+                content_response, error = content_response
             if not content_response:
-                continue
+                logger.error(f"File '{file_name}' did not found in Google Drive folder '{folder_id}'.")
+                return {"status": False, "error": f"File '{file_name}' did not found in Google Drive folder"}
             logger.info(f"Loaded {len(content_response.get('content_chunks'))} chunks from file: {file_name}")
             content_chunks = content_response.get('content_chunks')
             logger.info(f"Content chunks: {len(content_chunks)}")
@@ -75,7 +79,7 @@ async def load_documents(file_names, ait_id, document_collection, logger=None):
                     )
         except Exception as e:
             logger.error(f"Error processing file {file_name}: {e}")
-            continue
+            return {"status": False, "error": f"Error processing file {file_name}: {e}"}
 
     logger.info(f"Total paragraphs loaded: {len(documents)}")
-    return documents
+    return {"status": True, "documents": documents}

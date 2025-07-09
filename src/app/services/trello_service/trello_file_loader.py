@@ -164,47 +164,57 @@ async def load_trello_boards(trello_api, user_token):
         return e        
 
 async def load_trello_documents(ait_id, logger=None):
-    trello_api = os.getenv("TRELLO_API_KEY")
-    user_token = await trello_auth.get_token(ait_id)
-    if not user_token:
-        raise ValueError("User token not found. Please authenticate first.")
-    trello_board_documents = await load_trello_boards(
-        trello_api=trello_api,
-        user_token=user_token
-    )
-    trello_user_documents = await load_trello_user(
-        ait_id=ait_id,
-        document_collection="trello_user",
-        trello_api=trello_api,
-        user_token=user_token
-    )
-    logging.info(f"Loaded {len(trello_user_documents)} Trello user documents.")
-    trello_card_documents = await load_trello_card(
-        ait_id=ait_id,
-        document_collection="trello_card",
-        trello_board_documents=trello_board_documents,
-        trello_api=trello_api,
-        user_token=user_token
-    )
-    logging.info(f"Loaded {len(trello_card_documents)} Trello card documents.")
-    trello_log_documents = await load_trello_log(
-        ait_id=ait_id,
-        document_collection="trello_log",
-        trello_board_documents=trello_board_documents,
-        trello_api=trello_api,
-        user_token=user_token
-    )
-    logging.info(f"Loaded {len(trello_log_documents)} Trello log documents.")
-    trello_member_documents = await load_trello_member(
-        ait_id=ait_id,
-        document_collection="trello_member",
-        trello_board_documents=trello_board_documents,
-        trello_api=trello_api,
-        user_token=user_token
-    )
-    logging.info(f"Loaded {len(trello_member_documents)} Trello member documents.")
-    
-    trello_documents = trello_user_documents + trello_card_documents + trello_log_documents + trello_member_documents
-    
-    logging.info(f"Total Trello documents loaded: {len(trello_user_documents) + len(trello_card_documents) + len(trello_log_documents) + len(trello_member_documents)}")
-    return trello_documents
+    try:
+        user_token = await trello_auth.get_token(ait_id)
+        if not user_token:
+            error_msg = "User token not found. Please authenticate first."
+            logging.error(error_msg)
+            return {"status": False, "error": error_msg}
+        trello_board_documents = await load_trello_boards(
+            trello_api=trello_api,
+            user_token=user_token
+        )
+        if isinstance(trello_board_documents, Exception):
+            error_msg = f"Error loading Trello boards: {trello_board_documents}"
+            logging.error(error_msg)
+            return {"status": False, "error": error_msg}
+        trello_user_documents = await load_trello_user(
+            ait_id=ait_id,
+            document_collection="trello_user",
+            trello_api=trello_api,
+            user_token=user_token
+        )
+        logging.info(f"Loaded {len(trello_user_documents)} Trello user documents.")
+        trello_card_documents = await load_trello_card(
+            ait_id=ait_id,
+            document_collection="trello_card",
+            trello_board_documents=trello_board_documents,
+            trello_api=trello_api,
+            user_token=user_token
+        )
+        logging.info(f"Loaded {len(trello_card_documents)} Trello card documents.")
+        trello_log_documents = await load_trello_log(
+            ait_id=ait_id,
+            document_collection="trello_log",
+            trello_board_documents=trello_board_documents,
+            trello_api=trello_api,
+            user_token=user_token
+        )
+        logging.info(f"Loaded {len(trello_log_documents)} Trello log documents.")
+        trello_member_documents = await load_trello_member(
+            ait_id=ait_id,
+            document_collection="trello_member",
+            trello_board_documents=trello_board_documents,
+            trello_api=trello_api,
+            user_token=user_token
+        )
+        logging.info(f"Loaded {len(trello_member_documents)} Trello member documents.")
+        
+        trello_documents = trello_user_documents + trello_card_documents + trello_log_documents + trello_member_documents
+        
+        logging.info(f"Total Trello documents loaded: {len(trello_user_documents) + len(trello_card_documents) + len(trello_log_documents) + len(trello_member_documents)}")
+        return {"status": True, "documents": trello_documents}
+    except Exception as e:
+        error_msg = f"Exception in load_trello_documents: {str(e)}"
+        logging.error(error_msg)
+        return {"status": False, "error": error_msg}

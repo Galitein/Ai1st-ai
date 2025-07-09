@@ -11,7 +11,8 @@ from fastapi import (
     UploadFile, 
     File, 
     Form,
-    Body
+    Body,
+    responses
 )
 
 load_dotenv()
@@ -68,18 +69,17 @@ async def upload_file(
     """
     file_paths = []
     for upload in files:
-        # file_content = await upload.read()
         temp_path = f"/tmp/{upload.filename}"
         with open(temp_path, "wb") as f:
             file_content = await upload.read()
             logging.info(f"Writing to temporary file: {temp_path}")
             logging.info(f"File name: {upload.filename}")
-            # logging.info(f"File content: {file_content}")  # Uncomment to see content
             f.write(file_content)
         file_paths.append(temp_path)
     uploaded_files = await drive_upload.upload_files(file_paths)  # should be async
-    # uploaded_files = await drive_upload.upload_files(input_data.file_names)  # should be async
-    return {"uploaded_files": uploaded_files}
+    if not uploaded_files.get("status"):
+        raise HTTPException(status_code=400, detail=uploaded_files.get("message", uploaded_files.get("message", "Failed to upload files")))
+    return uploaded_files
 
 @router.get("/list_folders")
 async def list_folders_in_drive():
@@ -109,7 +109,7 @@ async def download_files(input_data: FileNamesInput):
     """
     downloaded_files = await drive_download.download_files(input_data.file_names)  # should be async
     if not downloaded_files.get("status"):
-        raise HTTPException(status_code=400, detail="Failed to download files")
+        raise HTTPException(status_code=400, detail=downloaded_files.get("message", "Failed to download files"))
     return downloaded_files
 
 @router.get("/refresh_token")
@@ -123,7 +123,7 @@ async def refresh_token():
             credentials_json = json.load(f)
         return credentials_json
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read credentials: {str(e)}")
+        return HTTPException(status_code=400, detail=f"Could not read credentials: {str(e)}")
 
 @router.post("/create_ait")
 async def create_ait(
@@ -133,21 +133,35 @@ async def create_ait(
     file_names: Optional[List[str]] = Form(None),
     task_or_prompt: str = Form(...),
     pre_context: str = Form(...),
-    destination: Literal["google", "local"] = Form("google")
+    destination: Literal["google", "local"] = Form(...)
 ):
 
     if file_names and len(file_names) == 1:
         file_names = [f.strip() for f in file_names[0].split(',')]
 
-    response = await create_ait_main(user_id,
-    ait_name,
-    files,
-    file_names,
-    task_or_prompt,
-    pre_context,
-    destination)
+    try:
+        response = await create_ait_main(
+            user_id,
+            ait_name,
+            files,
+            file_names,
+            task_or_prompt,
+            pre_context,
+            destination
+        )
+        if not response.get("status", True):
+            return responses.JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": response.get("message", "Failed to create AIT")
+                }
+            )
+        return response
+    except HTTPException as e:
+        # Let FastAPI handle HTTPExceptions as they are
+        raise e
 
-    return response
 
 @router.post("/create_embeddings")
 async def build_index_route(
@@ -155,20 +169,33 @@ async def build_index_route(
     file_names: Optional[List[str]] = Form(None),
     task_or_prompt: Optional[str] = Form(None),
     destination: Literal["google", "local", "trello"] = Form("google"),
-    document_collection: Literal["bib", "log_diary", "log_trello"] = Form("bib"),
+    document_collection: Literal["bib", "log_diary", "log_trello"] = Form(...),
     ait_id: str = Form(...),
     ):
     
     if file_names and len(file_names) == 1:
         file_names = [f.strip() for f in file_names[0].split(',')]
-
-    response = await create_embeddings_main(files,
-    file_names,
-    task_or_prompt,
-    destination,
-    document_collection,
-    ait_id)
-    return response
+    import json
+    try:
+        response = await create_embeddings_main(
+            files,
+            file_names,
+            task_or_prompt,
+            destination,
+            document_collection,
+            ait_id
+        )
+        if not response.get("status", True):
+            return responses.JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": response.get("message", "Failed to create embeddings")
+                }
+            )
+        return response
+    except HTTPException as e:
+        raise e
     
 
 @router.post("/search")
@@ -212,10 +239,16 @@ async def delete_index(input_data: FileNamesInput):
             input_data.document_collection
         )
         if not delete_response.get("status"):
-            raise HTTPException(status_code=400, detail=delete_response.get("message"))
+            return responses.JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": delete_response.get("message", "Failed to delete embeddings")
+                }
+            )
         return delete_response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting index and records: {str(e)}")
+    except HTTPException as e:
+        raise e
 
 @router.post("/chat")
 async def generate_query_response(input_data: ChatInput):

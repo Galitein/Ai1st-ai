@@ -46,7 +46,7 @@ async def upload_files(file_names):
             raise ValueError("Missing 'folder_id' in token.json.")
     except Exception as e:
         logging.error("Failed to load credentials: %s", e)
-        return {"status": False, "files": {}}
+        return {"status": False, "message": "Failed to load credentials."}
 
     # Load authorized credentials
     try:
@@ -55,15 +55,15 @@ async def upload_files(file_names):
         logging.info("Google Drive service initialized.")
     except Exception as e:
         logging.error("Failed to initialize Google Drive API: %s", e)
-        return {"status": False, "files": {}}
+        return {"status": False, "message": "Failed to initialize Google Drive API."}
 
     uploaded_files = {}
 
     # Upload each file
     for file_path in file_names:
         if not os.path.exists(file_path):
-            logging.warning("File not found: %s", file_path)
-            continue
+            logging.error("File not found: %s", file_path)
+            return {"status": False, "message": f"File '{file_path}' does not exist."}
 
         try:
             file_name = os.path.basename(file_path)
@@ -84,9 +84,9 @@ async def upload_files(file_names):
             logging.error("Failed to upload '%s': %s", file_path, e)
 
     if uploaded_files:
-        return json.dumps({"status": True, "files": uploaded_files}, indent=4)
+        return {"status": True, "files": uploaded_files}
     else:
-        return json.dumps({"status": False, "files": {}}, indent=4)
+        return {"status": False, "message": f"File '{file_path}' does not upload successfully"}
 
 
 # if __name__ == '__main__':
