@@ -67,6 +67,14 @@ async def upload_file(
     """
     Uploads files to Google Drive.
     """
+    if not files or len(files) == 0:
+        return responses.JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": "No file selected. Please select a file to upload."
+                }
+            )
     file_paths = []
     for upload in files:
         temp_path = f"/tmp/{upload.filename}"
@@ -135,7 +143,14 @@ async def create_ait(
     pre_context: str = Form(...),
     destination: Literal["google", "local"] = Form(...)
 ):
-
+    if not files or len(files) == 0:
+        return responses.JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": "No file selected. Please select a file to upload."
+                }
+            )
     if file_names and len(file_names) == 1:
         file_names = [f.strip() for f in file_names[0].split(',')]
 
@@ -172,7 +187,14 @@ async def build_index_route(
     document_collection: Literal["bib", "log_diary", "log_trello"] = Form(...),
     ait_id: str = Form(...),
     ):
-    
+    if not files or len(files) == 0:
+        return responses.JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": "No file selected. Please select a file to upload."
+                }
+            )
     if file_names and len(file_names) == 1:
         file_names = [f.strip() for f in file_names[0].split(',')]
     import json
