@@ -19,7 +19,9 @@ AUTHORITY = "https://login.microsoftonline.com/common"
 AUTH_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
 GRAPH_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
 DEFAULT_USER_ID = "anonymous"
+import time 
 
+time.sleep(2)
 msal_app = ConfidentialClientApplication(
     client_id=AZURE_CLIENT_ID,
     client_credential=AZURE_SECRET_ID,
