@@ -32,8 +32,11 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
     """
     try:
         logger.info(f"Starting Trello document search for query: {query}")
-        log_entity_string = await trello_query_entities(query=query)
-        logger.info(f"Entity string from trello_query_entities: {log_entity_string}")
+        log_entity_result = await trello_query_entities(query=query)
+        if not log_entity_result.get("status"):
+            logger.error(f"Entity extraction failed: {log_entity_result.get('error')}")
+            return {"status": False, "message": log_entity_result.get("message")}
+        log_entity_string = log_entity_result.get("data")
 
         trello_log_documents = []
         trello_card_documents = []
@@ -130,10 +133,10 @@ async def search_trello_documents(query: str, ait_id: str, limit: int = 10, simi
         }
 
         logger.info("Trello document search completed successfully")
-        return trello_documents
+        return {"status": True, "data": trello_documents}
     except Exception as e:
         logger.error(f"Error during Trello document search: {e}")
-        return {"error": str(e)}
+        return {"status": False, "message": str(e)}
 
 
 # if __name__ == "__main__":

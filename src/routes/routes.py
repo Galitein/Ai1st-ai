@@ -25,7 +25,9 @@ from src.app.services.google_service import (
 )
 from src.app.services.text_processing import (
     vector_search,
-    delete_embeddings
+    delete_embeddings,
+    create_embeddings,
+    create_embedding_urls
 )
 
 from src.app.services.text_generation import (
@@ -37,7 +39,8 @@ from src.app.models.input_models import (
     FileNamesInput,
     QueryInput,
     TaskOrPromptInput,
-    ChatInput
+    ChatInput,
+    CreateIndexingInput
 )
 
 from src.app.utils.process_ait_files import create_ait_main, create_embeddings_main
@@ -149,28 +152,33 @@ async def create_ait(
 
     return response
 
-@router.post("/create_embeddings")
-async def build_index_route(
-    files: Optional[list[UploadFile]] = File(None),
-    file_names: Optional[List[str]] = Form(None),
-    task_or_prompt: Optional[str] = Form(None),
-    destination: Literal["google", "local", "trello"] = Form("google"),
-    document_collection: Literal["bib", "log_diary", "log_trello"] = Form("bib"),
+@router.post("/create_embeddings_urls")
+async def build_index_urls(
+    file_url: Optional[List[str]] = Form(None),
     ait_id: str = Form(...),
     ):
-    
-    if file_names and len(file_names) == 1:
-        file_names = [f.strip() for f in file_names[0].split(',')]
 
-    response = await create_embeddings_main(files,
-    file_names,
-    task_or_prompt,
-    destination,
-    document_collection,
-    ait_id)
+    response = await create_embeddings_main(ait_id=ait_id, documents=documents)
     return response
     
-
+@router.post("/create_embeddings")
+async def build_index(
+    input_data: CreateIndexingInput
+):
+    """
+    Creates embeddings for the provided documents and builds an index.
+    """
+    try:
+        response = await create_embeddings.process_and_build_index(
+            ait_id=input_data.ait_id, 
+            documents=input_data.documents
+        )
+        if not response.get("status"):
+            raise HTTPException(status_code=400, detail=response.get("message"))
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating embeddings: {str(e)}")
+    
 @router.post("/search")
 async def search_route(input_data: QueryInput):
     """

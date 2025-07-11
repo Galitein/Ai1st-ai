@@ -66,7 +66,7 @@ Ai1st-ai/
 │   │   │   │   ├── generate_prompt.py
 │   │   │   │   └── generate_response.py
 │   │   │   ├── text_processing/
-│   │   │   │   ├── create_embeddings.py
+│   │   │   │   ├── create_embeddings_main.py
 │   │   │   │   ├── delete_embeddings.py
 │   │   │   │   ├── local_file_loader.py
 │   │   │   │   └── vector_search.py
@@ -115,7 +115,7 @@ Ai1st-ai/
 
 #### Text Processing (`src/app/services/text_processing/`)
 
-- **`create_embeddings.py`**: Orchestrates the process of loading documents, chunking, embedding, and indexing them in Qdrant for semantic search.
+- **`create_embeddings_main.py`**: Orchestrates the process of loading documents, chunking, embedding, and indexing them in Qdrant for semantic search.
 - **`delete_embeddings.py`**: Removes embeddings and records for specific files.
 - **`local_file_loader.py`**: Loads and chunks files from the local filesystem.
 - **`vector_search.py`**: Performs semantic search over the indexed embeddings using Qdrant.
@@ -182,7 +182,7 @@ The application relies on several environment variables, typically set in a `.en
 
 - **POST `/create_ait`**  
   Create a new AIT (AI Task) with files and a prompt, and build the index.
-- **POST `/create_embeddings`**  
+- **POST `/create_embeddings_main`**  
   Build or update the index for a set of files.
 - **POST `/delete_embeddings`**  
   Delete embeddings and records for specific files.

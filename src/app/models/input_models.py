@@ -14,6 +14,9 @@ class QueryInput(AitIdInput):
     limit: int
     similarity_threshold: float
 
+class CreateIndexingInput(AitIdInput):
+    documents: List[str]
+
 class TaskOrPromptInput(AitIdInput):
     task_or_prompt: str
 

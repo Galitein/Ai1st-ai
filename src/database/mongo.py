@@ -20,7 +20,7 @@ class MongoDBClient:
             return {"status": True, "inserted_id": str(result.inserted_id)}
         except Exception as e:
             logging.error(f"Insert error: {e}")
-            return {"status": False, "error": str(e)}
+            return {"status": False, "message": str(e)}
 
     async def find(self, collection_name: str, query: dict):
         try:
@@ -32,7 +32,7 @@ class MongoDBClient:
             return {"status": True, "results": results}
         except Exception as e:
             logging.error(f"Find error: {e}")
-            return {"status": False, "error": str(e)}
+            return {"status": False, "message": str(e)}
 
     async def find_one(self, collection_name: str, query: dict):
         try:
@@ -41,7 +41,7 @@ class MongoDBClient:
             return {"status": True, "result": result}
         except Exception as e:
             logging.error(f"Find one error: {e}")
-            return {"status": False, "error": str(e)}
+            return {"status": False, "message": str(e)}
 
     async def update(self, collection_name: str, query: dict, update_values: dict):
         try:
@@ -50,7 +50,7 @@ class MongoDBClient:
             return {"status": True, "modified_count": result.modified_count}
         except Exception as e:
             logging.error(f"Update error: {e}")
-            return {"status": False, "error": str(e)}
+            return {"status": False, "message": str(e)}
 
     async def delete(self, collection_name: str, query: dict):
         try:
@@ -59,4 +59,4 @@ class MongoDBClient:
             return {"status": True, "deleted_count": result.deleted_count}
         except Exception as e:
             logging.error(f"Delete error: {e}")
-            return {"status": False, "error": str(e)}
+            return {"status": False, "message": str(e)}

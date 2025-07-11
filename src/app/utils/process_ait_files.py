@@ -14,7 +14,7 @@ from fastapi import (
 )
 
 from src.app.services.text_processing import (
-    create_embeddings, 
+    create_embeddings_main, 
 )
 
 from src.app.services.text_generation import (
@@ -37,7 +37,7 @@ db = AsyncMySQLDatabase(
     database=DB_NAME
 )
 
-async def insert_custom_gpt_files(custom_gpt_id: str, file_names: List[str], file_type: str = "bib") -> bool:
+async def insert_custom_gpt_files(custom_gpt_id: str, file_name: str, file_type: str = "bib") -> bool:
     """
     Insert multiple file records into custom_gpt_files table
     
@@ -50,28 +50,25 @@ async def insert_custom_gpt_files(custom_gpt_id: str, file_names: List[str], fil
         bool: True if successful, False otherwise
     """
     try:
-        if not file_names:
+        if not file_name:
             return True  # No files to insert, consider it successful
             
         # Prepare file records for batch insert
-        file_records = []
         current_time = datetime.utcnow()
         
-        for file_name in file_names:
-            file_record = {
-                'custom_gpt_id': custom_gpt_id,
-                'file_name': file_name,
-                'file_type': file_type,
-                'created_at': current_time,
-                'updated_at': current_time
+        file_record = {
+            'custom_gpt_id': custom_gpt_id,
+            'file_name': file_name,
+            'file_type': file_type,
+            'created_at': current_time,
+            'updated_at': current_time
             }
-            file_records.append(file_record)
         
         # Batch insert all file records
-        success = await db.insert_many('custom_gpt_files', file_records)
+        success = await db.insert('custom_gpt_files', file_record)
         
         if success:
-            logging.info(f"Successfully inserted {len(file_records)} file records for custom_gpt_id: {custom_gpt_id}")
+            logging.info(f"Successfully inserted {file_record} file records for custom_gpt_id: {custom_gpt_id}")
         else:
             logging.error(f"Failed to insert file records for custom_gpt_id: {custom_gpt_id}")
             
@@ -205,7 +202,7 @@ async def create_ait_main(user_id,
             raise HTTPException(status_code=500, detail="Failed to insert file records into database")
 
         # Now build index
-        index_response = await create_embeddings.process_and_build_index(
+        index_response = await create_embeddings_main.process_and_build_index(
             ait_id=ait_id,
             file_names=file_names_list,
             document_collection='bib',
@@ -238,76 +235,5 @@ async def create_ait_main(user_id,
         await db.close_pool()
 
 
-async def create_embeddings_main(files,
-    file_names,
-    task_or_prompt,
-    destination,
-    document_collection,
-    ait_id):
-    try:
-        await db.create_pool()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
-    
-    try:
-        # Validate inputs based on destination
-        if destination == "local":
-            if not files or len(files) == 0 or (len(files) == 1 and files[0].filename == ''):
-                raise HTTPException(status_code=400, detail="Files must be provided for local uploads")
-            
-            save_dir = f"./temp/{ait_id}"
-            os.makedirs(save_dir, exist_ok=True)
-            local_file_paths = []
-            
-            for upload in files:
-                if upload.filename:  # Check if file actually exists
-                    file_path = os.path.join(save_dir, upload.filename)
-                    file_content = await upload.read()
-                    with open(file_path, "wb") as f:
-                        f.write(file_content)
-                    local_file_paths.append(upload.filename)
-            
-            file_names_list = local_file_paths
-            
-        elif destination == "google":
-            if not file_names:
-                raise HTTPException(status_code=400, detail="File names must be provided for Google Drive uploads")
-            
-            if isinstance(file_names, str):
-                file_names_list = [name.strip() for name in file_names.split(",") if name.strip()]
-            else:
-                file_names_list = [name for name in file_names if name.strip()]
-            
-            if not file_names_list:
-                raise HTTPException(status_code=400, detail="At least one valid file name must be provided")
-        
-        elif destination == "trello":
-            file_names_list = []
-        
-        file_insert_success = await insert_custom_gpt_files(ait_id, file_names_list, document_collection)
-        
-        if not file_insert_success:
-            raise HTTPException(status_code=500, detail="Failed to insert file records into database")
-            
-        index_response = await create_embeddings.process_and_build_index(
-            ait_id=ait_id,
-            file_names=file_names_list,
-            document_collection=document_collection,
-            destination=destination
-        )
 
-        if not index_response.get("status"):
-            await delete_custom_gpt_files_by_gpt_id(ait_id)
-            raise HTTPException(status_code=400, detail=index_response.get("message"))
-            
-        return {"status": True, "ait_id": ait_id, "files_inserted": len(file_names_list)}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Unexpected error in build_index_route: {str(e)}")
-        await delete_custom_gpt_files_by_gpt_id(ait_id)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-    finally:
-        await db.close_pool()
 

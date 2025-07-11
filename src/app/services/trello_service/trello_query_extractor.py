@@ -36,45 +36,15 @@ async def trello_query_entities(
     ):
     try:
         board_ids = await get_trello_user_board(api_key=api_key, token=token)
-        # logging.info(f"Fetched Trello board IDs: {board_ids}")
-    except Exception as e:
-        logging.error(f"Error fetching Trello board IDs: {e}")
-        return None
-
-    try:
         trello_user_data = await get_trello_user(api_key=api_key, token=token)
-        # logging.info(f"Fetched Trello user data: {trello_user_data}")
-    except Exception as e:
-        logging.error(f"Error fetching Trello user data: {e}")
-        return None
-
-    try:
         trello_board_member_data = await get_trello_members(board_ids=board_ids, api_key=api_key, token=token)
-        # logging.info(f"Fetched Trello board members: {trello_board_member_data}")
-    except Exception as e:
-        logging.error(f"Error fetching Trello board members: {e}")
-        return None
-
-    try:
         trello_log_metadata = read_metadata(filepath=metadata_file_path)
-        # logging.info(f"Read Trello log metadata: {trello_log_metadata}")
-    except Exception as e:
-        logging.error(f"Error reading metadata file: {e}")
-        return None
-
-    try:
         trello_extract_prompt = trello_extract_entities_prompt(
             user_data=[], 
             members_data=trello_board_member_data, 
             trello_log_metadata=trello_log_metadata,
             query=query
         )
-        # logging.info(f"Built Trello extract prompt: {trello_extract_prompt}")
-    except Exception as e:
-        logging.error(f"Error building prompt: {e}")
-        return None
-
-    try:
         client = AsyncOpenAI(api_key=openai_api_key)
         response = await client.chat.completions.create(
             model="gpt-4.1",
@@ -85,23 +55,19 @@ async def trello_query_entities(
             temperature=0.3
         )
         content = response.choices[0].message.content
-    except Exception as e:
-        logging.error(f"Error calling OpenAI API: {e}")
-        return None
-
-    try:
         logging.info(content)
         extracted = extract_json_from_response(content)
         if isinstance(extracted, list):
-            return "\n".join(build_log_text(item) for item in extracted)
+            result = "\n".join(build_log_text(item) for item in extracted)
         elif isinstance(extracted, dict):
-            return build_log_text(extracted)
+            result = build_log_text(extracted)
         else:
             logging.warning("No valid JSON object or list found.")
-            return None
+            result = None
+        return {"status": True, "data": result}
     except Exception as e:
-        logging.error(f"Error extracting JSON from response: {e}")
-        return None
+        logging.error(f"Error in trello_query_entities: {e}")
+        return {"status": False, "message": str(e)}
 
 # if __name__ == "__main__":
 #     import asyncio
