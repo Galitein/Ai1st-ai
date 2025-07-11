@@ -35,8 +35,8 @@ class EmailVectorService:
     """Service for creating and managing email vector embeddings with LangChain integration."""
 
     def __init__(self):
-        self.chunk_size = 500  # Target tokens
-        self.chunk_overlap = 150
+        self.chunk_size = 400  # Target tokens
+        self.chunk_overlap = 100
         self.min_chunk_size = 4
         self.max_chars_per_chunk = self.chunk_size * 5  # Avg 6 chars/token
 
@@ -199,15 +199,10 @@ class EmailVectorService:
         if isinstance(received_dt, datetime):
             received_dt = received_dt.strftime("%Y-%m-%d %H:%M:%S")
         
-        sent_dt = email_data.get("sent_datetime", "Unknown")
-        if isinstance(sent_dt, datetime):
-            sent_dt = sent_dt.strftime("%Y-%m-%d %H:%M:%S")
-        
         # Create comprehensive context
         enhanced_text = f"""Sender Name: {email_data.get('sender_name', 'Unknown')}
 Sender Email: {email_data.get('sender_address', 'Unknown')}
-Received DateTime: {received_dt}
-Sent DateTime: {sent_dt}
+DateTime: {received_dt}
 Subject: {email_data.get('subject', 'No Subject')}
 
 Email Content:
@@ -256,7 +251,7 @@ Email Content:
                     enhanced_text = self.create_enhanced_chunk_text(email_data, chunk_content)
                     
                     # Create comprehensive metadata
-                    metadata = self.create_comprehensive_metadata(ait_id ,email_data, chunk_index, chunk_content)
+                    metadata = self.create_comprehensive_metadata(ait_id ,email_data, chunk_index, enhanced_text)
                     
                     # Generate chunk ID
                     chunk_id = self._generate_chunk_id(email_data.get("email_id", ""), chunk_index)
