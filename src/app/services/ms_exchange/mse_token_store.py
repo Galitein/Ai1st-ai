@@ -149,17 +149,20 @@ async def check_email_duplicate(ait_id, subject, sent_datetime, sender_address):
         logging.error(f"Error checking duplicate: {e}")
         return False
 
+
 async def store_emails_in_mysql(messages, ait_id):
     """
     Store emails in MySQL user_email_content table with enhanced duplicate prevention.
-    Returns tuple of (stored_count, skipped_count)
+    Returns tuple of (stored_count, skipped_count, new_emails_for_embedding)
     
     This function handles both:
     1. Fresh emails from Microsoft Graph API (original message structure)
     2. Enhanced duplicate checking based on subject, sent_datetime, and sender_address
+    3. Returns only NEW emails that need vector embedding processing
     """
     stored_count = 0
     skipped_count = 0
+    new_emails_for_embedding = []  # Track emails that are actually new
     
     try:
         await mysql_db.create_pool()
@@ -210,7 +213,7 @@ async def store_emails_in_mysql(messages, ait_id):
                 
                 email_data = {
                     "email_id": message.get("id", ""),
-                    "ait_id": ait_id,  # Changed from ait_id to ait_id to match your schema
+                    "ait_id": ait_id,
                     "categories": categories_json,
                     "content": content,
                     "created_datetime": parse_api_datetime(message.get("createdDateTime")),
@@ -235,6 +238,8 @@ async def store_emails_in_mysql(messages, ait_id):
                     params=(email_data["email_id"], ait_id)
                 )
                 
+                email_is_new = False
+                
                 if existing_email:
                     # Update existing record
                     update_data = {k: v for k, v in email_data.items() if k not in ["email_id", "ait_id"]}
@@ -248,6 +253,7 @@ async def store_emails_in_mysql(messages, ait_id):
                     if success:
                         logging.info(f"Updated existing email: {email_data['subject'][:50]}...")
                         stored_count += 1
+                        # Don't add to embedding queue since it's an update
                     else:
                         logging.info(f"Failed to update email: {email_data['subject'][:50]}...")
                         skipped_count += 1
@@ -261,9 +267,14 @@ async def store_emails_in_mysql(messages, ait_id):
                     if success:
                         logging.info(f"Stored new email: {email_data['subject'][:50]}...")
                         stored_count += 1
+                        email_is_new = True
                     else:
                         logging.info(f"Failed to store email: {email_data['subject'][:50]}...")
                         skipped_count += 1
+                
+                # Only add to embedding queue if email is genuinely new
+                if email_is_new:
+                    new_emails_for_embedding.append(message)
                     
             except Exception as e:
                 logging.error(f"Error processing email: {e}")
@@ -272,8 +283,9 @@ async def store_emails_in_mysql(messages, ait_id):
                 
     except Exception as e:
         logging.error(f"Database connection error: {e}")
-        return 0, len(messages)
+        return 0, len(messages), []
     finally:
         await mysql_db.close_pool()
     
-    return stored_count, skipped_count
+    return stored_count, skipped_count, new_emails_for_embedding
+

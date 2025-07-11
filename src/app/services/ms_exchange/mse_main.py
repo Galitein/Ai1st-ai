@@ -435,6 +435,7 @@ async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
         "total_chunks_skipped": total_chunks_skipped
     }
 
+
 async def sync_emails(
     ait_id: str = DEFAULT_USER_ID,
     start_date: Optional[str] = None,
@@ -444,10 +445,10 @@ async def sync_emails(
     search: Optional[str] = None,
     top: Optional[int] = Query(10, ge=1, le=MAX_TOP),
     orderby: Optional[str] = "receivedDateTime desc",
-    email_type: Optional[str] = "received",  # New parameter
+    email_type: Optional[str] = "received", 
     next_url: Optional[str] = None
 ):
-    # Get access token
+
     token_data = await get_token(ait_id)
     if not token_data:
         return JSONResponse({"error": "User not authenticated."}, status_code=401)
@@ -458,153 +459,76 @@ async def sync_emails(
 
     headers = build_headers(access_token)
 
-    # Handle both received and sent emails
-    if email_type == "both":
-        # Process both received and sent emails
-        all_messages = []
-        all_stats = {
-            "total_emails_processed": 0,
-            "total_chunks_stored": 0,
-            "total_chunks_skipped": 0
-        }
-        mysql_stats = {
-            "stored_emails": 0,
-            "skipped_duplicates": 0
-        }
-        
-        for current_type in ["received", "sent"]:
-            # Validate and prepare filters for current type
-            filters, error_response = await validate_and_prepare_filters(
-                start_date, end_date, from_email, unread_only, search, top, orderby, current_type
-            )
-            if error_response:
-                return error_response
-            
-            url = build_graph_url(filters)
-            
-            # Make API request
-            response, error_response = await make_graph_request(url, headers, ait_id)
-            if error_response:
-                return error_response
-            
-            # Process response
-            try:
-                data = response.json()
-                result, error_response = process_graph_response(data, filters, b_sanitize=False)
-                if error_response:
-                    return error_response
-                
-                # Add to all messages
-                all_messages.extend(result["messages"])
-                
-            except ValueError as e:
-                return JSONResponse({
-                    "error": f"Failed to parse JSON response from Microsoft Graph API for {current_type} emails.",
-                    "details": str(e)
-                }, status_code=500)
-            except Exception as e:
-                return JSONResponse({
-                    "error": f"Unexpected error processing {current_type} emails.",
-                    "details": str(e)
-                }, status_code=500)
-        
-        # Process all messages together
-        if all_messages:
-            # Process emails and create vector embeddings
-            vector_stats = await process_email_documents(messages=all_messages, ait_id=ait_id)
-            
-            # Store emails in MySQL
-            stored_count, skipped_count = await store_emails_in_mysql(all_messages, ait_id)
-            
-            all_stats.update(vector_stats)
-            mysql_stats["stored_emails"] = stored_count
-            mysql_stats["skipped_duplicates"] = skipped_count
-        
-        return {
-            "success": True,
-            "mysql_storage": mysql_stats,
-            "vector_processing": all_stats,
-            "total_processed": len(all_messages),
-            "email_types_processed": ["received", "sent"],
-            "filters_applied": {
-                "start_date": start_date,
-                "end_date": end_date,
-                "from_email": from_email,
-                "unread_only": unread_only,
-                "search": search,
-                "email_type": email_type
-            }
-        }
+    all_messages = []
+    all_new_emails_for_embedding = []  
+    all_stats = {
+        "total_emails_processed": 0,
+        "total_chunks_stored": 0,
+        "total_chunks_skipped": 0
+    }
+    mysql_stats = {
+        "stored_emails": 0,
+        "skipped_duplicates": 0
+    }
     
-    else:
-        # Handle next_url for pagination
-        if next_url:
-            if not next_url.startswith("https://graph.microsoft.com"):
-                return JSONResponse({"error": "Invalid next_url provided."}, status_code=400)
-            url = next_url
-        else:
-            # Validate and prepare filters
-            filters, error_response = await validate_and_prepare_filters(
-                start_date, end_date, from_email, unread_only, search, top, orderby, email_type
-            )
-            if error_response:
-                return error_response
-            
-            url = build_graph_url(filters)
-
-        # Make API request
+    for current_type in ["received", "sent"]:
+        filters, error_response = await validate_and_prepare_filters(
+            start_date, end_date, from_email, unread_only, search, top, orderby, current_type
+        )
+        if error_response:
+            return error_response
+        
+        url = build_graph_url(filters)
+        
         response, error_response = await make_graph_request(url, headers, ait_id)
         if error_response:
             return error_response
-
-        # Process response
+        
         try:
             data = response.json()
-            result, error_response = process_graph_response(data, {
-                'start_date': start_date,
-                'end_date': end_date,
-                'from_email': from_email,
-                'unread_only': unread_only,
-                'search': search,
-                'top': top,
-                'email_type': email_type
-            }, b_sanitize=False)
+            result, error_response = process_graph_response(data, filters, b_sanitize=False)
             if error_response:
                 return error_response
-
-            # Process emails and create vector embeddings
-            vector_stats = await process_email_documents(messages=result["messages"], ait_id=ait_id)
             
-            # Store emails in MySQL
-            stored_count, skipped_count = await store_emails_in_mysql(result["messages"], ait_id)
+            stored_count, skipped_count, new_emails = await store_emails_in_mysql(result["messages"], ait_id)
 
-            return {
-                "success": True,
-                "mysql_storage": {
-                    "stored_emails": stored_count,
-                    "skipped_duplicates": skipped_count
-                },
-                "vector_processing": vector_stats,
-                "next_link": result.get("next_link"),
-                "total_processed": len(result["messages"]),
-                "email_type_processed": email_type,
-                "filters_applied": {
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "from_email": from_email,
-                    "unread_only": unread_only,
-                    "search": search,
-                    "email_type": email_type
-                }
-            }
-
+            mysql_stats["stored_emails"] += stored_count
+            mysql_stats["skipped_duplicates"] += skipped_count
+            
+            all_new_emails_for_embedding.extend(new_emails)
+            all_messages.extend(result["messages"]) 
+            
         except ValueError as e:
             return JSONResponse({
-                "error": "Failed to parse JSON response from Microsoft Graph API.",
+                "error": f"Failed to parse JSON response from Microsoft Graph API for {current_type} emails.",
                 "details": str(e)
             }, status_code=500)
         except Exception as e:
             return JSONResponse({
-                "error": "Unexpected error processing response.",
+                "error": f"Unexpected error processing {current_type} emails.",
                 "details": str(e)
             }, status_code=500)
+    
+    if all_new_emails_for_embedding:
+        logging.info(f"Processing {len(all_new_emails_for_embedding)} new emails for vector embeddings out of {len(all_messages)} total emails")
+        vector_stats = await process_email_documents(messages=all_new_emails_for_embedding, ait_id=ait_id)
+        all_stats.update(vector_stats)
+    else:
+        logging.info("No new emails to process for vector embeddings")
+    
+    return {
+        "success": True,
+        "mysql_storage": mysql_stats,
+        "vector_processing": all_stats,
+        "total_processed": len(all_messages),
+        "new_emails_for_embedding": len(all_new_emails_for_embedding),
+        "email_types_processed": ["received", "sent"],
+        "filters_applied": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "from_email": from_email,
+            "unread_only": unread_only,
+            "search": search,
+            "email_type": email_type
+        }
+    }

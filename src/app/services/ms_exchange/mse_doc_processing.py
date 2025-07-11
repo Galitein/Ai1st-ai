@@ -37,7 +37,7 @@ class EmailVectorService:
     def __init__(self):
         self.chunk_size = 500  # Target tokens
         self.chunk_overlap = 150
-        self.min_chunk_size = 150
+        self.min_chunk_size = 4
         self.max_chars_per_chunk = self.chunk_size * 5  # Avg 6 chars/token
 
     async def initialize_collection(self, ait_id):
