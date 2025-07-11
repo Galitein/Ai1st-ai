@@ -47,6 +47,9 @@ def validate_email_format(email: str) -> bool:
 def validate_search_query(search: str) -> bool:
     return len(search.strip()) <= MAX_SEARCH_LENGTH if search else True
 
+def validate_email_type(email_type: str) -> bool:
+    return email_type in ["received", "sent", "both"]
+
 def get_default_date_range(days: int = DEFAULT_DAYS_RANGE) -> tuple:
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
@@ -59,21 +62,38 @@ def build_headers(access_token: str) -> dict:
         "Content-Type": "application/json"
     }
 
-def sanitize_message(message: dict) -> dict:
+def sanitize_message(message: dict, email_type: str = "received") -> dict:
+    """
+    Sanitize message data and add email type information
+    """
+    # For sent emails, we need to handle the 'to' field instead of 'from'
+    if email_type == "sent":
+        recipient_info = message.get("toRecipients", [])
+        primary_recipient = recipient_info[0] if recipient_info else {}
+        contact_info = primary_recipient.get("emailAddress", {}) if primary_recipient else {}
+    else:
+        contact_info = message.get("from", {})
+    
     return {
         "id": message.get("id", ""),
         "subject": message.get("subject", ""),
-        "from": message.get("from", {}),
+        "from": message.get("from", {}) if email_type == "received" else message.get("sender", {}),
+        "to": message.get("toRecipients", []) if email_type == "sent" else [],
         "receivedDateTime": message.get("receivedDateTime", ""),
+        "sentDateTime": message.get("sentDateTime", ""),
         "content": html2text.html2text(message.get("body", {}).get("content", "")).replace("\n", "    "),
-        "hasAttachments": message.get("hasAttachments", False)
+        "hasAttachments": message.get("hasAttachments", False),
+        "emailType": email_type,  # Add email type for identification
+        "isRead": message.get("isRead", False)
     }
 
-def apply_client_side_filters(messages: list, filters: dict) -> list:
+def apply_client_side_filters(messages: list, filters: dict, email_type: str = "received") -> list:
     filtered_messages = []
     for message in messages:
         if filters.get('start_date') or filters.get('end_date'):
-            received_dt_str = message.get("receivedDateTime", "")
+            # Use sentDateTime for sent emails, receivedDateTime for received emails
+            datetime_field = "sentDateTime" if email_type == "sent" else "receivedDateTime"
+            received_dt_str = message.get(datetime_field, "")
             if received_dt_str:
                 try:
                     received_dt = datetime.fromisoformat(received_dt_str.replace('Z', '+00:00'))
@@ -95,9 +115,21 @@ def apply_client_side_filters(messages: list, filters: dict) -> list:
             continue
             
         if filters.get('from_email'):
-            msg_from = message.get("from", {}).get("emailAddress", {}).get("address", "")
-            if msg_from.lower() != filters['from_email'].lower():
-                continue
+            if email_type == "sent":
+                # For sent emails, check if the email was sent TO the specified address
+                to_recipients = message.get("toRecipients", [])
+                found_recipient = False
+                for recipient in to_recipients:
+                    if recipient.get("emailAddress", {}).get("address", "").lower() == filters['from_email'].lower():
+                        found_recipient = True
+                        break
+                if not found_recipient:
+                    continue
+            else:
+                # For received emails, check the from field
+                msg_from = message.get("from", {}).get("emailAddress", {}).get("address", "")
+                if msg_from.lower() != filters['from_email'].lower():
+                    continue
                 
         if filters.get('search'):
             searchable_text = f"{message.get('subject', '')} {message.get('bodyPreview', '')}"
@@ -119,7 +151,8 @@ async def validate_and_prepare_filters(
     unread_only: Optional[bool] = False,
     search: Optional[str] = None,
     top: Optional[int] = Query(10, ge=1, le=MAX_TOP),
-    orderby: Optional[str] = "receivedDateTime desc"
+    orderby: Optional[str] = "receivedDateTime desc",
+    email_type: Optional[str] = "both"
 ) -> tuple:
     # Validate inputs
     if start_date and not validate_date_format(start_date):
@@ -133,6 +166,9 @@ async def validate_and_prepare_filters(
     
     if search and not validate_search_query(search):
         return None, JSONResponse({"error": "Search query too long (max 255 characters)."}, status_code=400)
+    
+    if email_type and not validate_email_type(email_type):
+        return None, JSONResponse({"error": "Invalid email_type. Must be 'received', 'sent', or 'both'."}, status_code=400)
     
     # Set default date range if no filters provided
     filters_provided = any([start_date, end_date, from_email, unread_only, search])
@@ -148,6 +184,10 @@ async def validate_and_prepare_filters(
         if (end_dt - start_dt).days > MAX_DATE_RANGE_DAYS:
             return None, JSONResponse({"error": f"Date range cannot exceed {MAX_DATE_RANGE_DAYS} days."}, status_code=400)
     
+    # Adjust orderby for sent emails
+    if email_type == "sent" and orderby == "receivedDateTime desc":
+        orderby = "sentDateTime desc"
+    
     return {
         'start_date': start_date,
         'end_date': end_date,
@@ -155,37 +195,57 @@ async def validate_and_prepare_filters(
         'unread_only': unread_only,
         'search': search,
         'top': top,
-        'orderby': orderby
+        'orderby': orderby,
+        'email_type': email_type
     }, None
 
 def build_graph_url(filters: dict) -> str:
+    email_type = filters.get('email_type', 'received')
+    
+    # Choose the correct endpoint based on email type
+    if email_type == "sent":
+        base_endpoint = "https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages"
+        datetime_field = "sentDateTime"
+    else:
+        base_endpoint = "https://graph.microsoft.com/v1.0/me/messages"
+        datetime_field = "receivedDateTime"
+    
     if filters.get('search'):
         search_terms = [filters['search']]
         if filters.get('from_email'):
-            search_terms.append(f"from:{filters['from_email']}")
+            if email_type == "sent":
+                search_terms.append(f"to:{filters['from_email']}")
+            else:
+                search_terms.append(f"from:{filters['from_email']}")
         search_query = " ".join(search_terms)
-        return f"https://graph.microsoft.com/v1.0/me/messages?$search=\"{quote(search_query)}\"&$top={min(filters['top'] * 3, 300)}"
+        return f"{base_endpoint}?$search=\"{quote(search_query)}\"&$top={min(filters['top'] * 3, 300)}"
     
     elif filters.get('from_email') and not (filters.get('start_date') or filters.get('end_date') or filters.get('unread_only')):
-        return f"https://graph.microsoft.com/v1.0/me/messages?$search=\"from:{filters['from_email']}\"&$top={filters['top']}"
+        if email_type == "sent":
+            return f"{base_endpoint}?$search=\"to:{filters['from_email']}\"&$top={filters['top']}"
+        else:
+            return f"{base_endpoint}?$search=\"from:{filters['from_email']}\"&$top={filters['top']}"
     
     else:
         query_filters = []
         if filters.get('start_date'):
-            query_filters.append(f"receivedDateTime ge {filters['start_date']}T00:00:00Z")
+            query_filters.append(f"{datetime_field} ge {filters['start_date']}T00:00:00Z")
         if filters.get('end_date'):
-            query_filters.append(f"receivedDateTime le {filters['end_date']}T23:59:59Z")
+            query_filters.append(f"{datetime_field} le {filters['end_date']}T23:59:59Z")
         if filters.get('unread_only'):
             query_filters.append("isRead eq false")
         if filters.get('from_email'):
-            query_filters.append(f"from/emailAddress/address eq '{filters['from_email']}'")
+            if email_type == "sent":
+                query_filters.append(f"toRecipients/any(a:a/emailAddress/address eq '{filters['from_email']}')")
+            else:
+                query_filters.append(f"from/emailAddress/address eq '{filters['from_email']}'")
         
         if query_filters:
             filter_query = " and ".join(query_filters)
-            return f"https://graph.microsoft.com/v1.0/me/messages?$filter={quote(filter_query)}&$top={filters['top']}&$orderby={filters['orderby']}"
+            return f"{base_endpoint}?$filter={quote(filter_query)}&$top={filters['top']}&$orderby={filters['orderby']}"
         else:
-            default_filter = f"receivedDateTime ge {(datetime.utcnow() - timedelta(days=DEFAULT_DAYS_RANGE)).strftime('%Y-%m-%d')}T00:00:00Z"
-            return f"https://graph.microsoft.com/v1.0/me/messages?$filter={quote(default_filter)}&$top={filters['top']}&$orderby={filters['orderby']}"
+            default_filter = f"{datetime_field} ge {(datetime.utcnow() - timedelta(days=DEFAULT_DAYS_RANGE)).strftime('%Y-%m-%d')}T00:00:00Z"
+            return f"{base_endpoint}?$filter={quote(default_filter)}&$top={filters['top']}&$orderby={filters['orderby']}"
 
 async def make_graph_request(url: str, headers: dict, ait_id: str):
     max_retries = 3
@@ -230,7 +290,7 @@ async def make_graph_request(url: str, headers: dict, ait_id: str):
     
     return None, JSONResponse({"error": "Max retries exceeded."}, status_code=500)
 
-def process_graph_response(response_data: dict, filters: dict, b_sanitize:bool = True) -> dict:
+def process_graph_response(response_data: dict, filters: dict, b_sanitize: bool = True) -> dict:
     if "error" in response_data:
         error_code = response_data["error"].get("code", "Unknown")
         error_message = response_data["error"].get("message", "Unknown error")
@@ -254,29 +314,44 @@ def process_graph_response(response_data: dict, filters: dict, b_sanitize:bool =
         return None, JSONResponse({"error": "Invalid response format from Microsoft Graph API."}, status_code=500)
 
     messages = response_data.get("value", [])
+    email_type = filters.get('email_type', 'received')
     
     if filters.get('search') and (filters.get('start_date') or filters.get('end_date') or filters.get('unread_only')):
-        messages = apply_client_side_filters(messages, filters)
+        messages = apply_client_side_filters(messages, filters, email_type)
     
     elif filters.get('from_email') and not filters.get('search'):
-        messages = [msg for msg in messages if msg.get("from", {}).get("emailAddress", {}).get("address", "").lower() == filters['from_email'].lower()]
+        if email_type == "sent":
+            # Filter sent emails by recipient
+            filtered_messages = []
+            for msg in messages:
+                to_recipients = msg.get("toRecipients", [])
+                for recipient in to_recipients:
+                    if recipient.get("emailAddress", {}).get("address", "").lower() == filters['from_email'].lower():
+                        filtered_messages.append(msg)
+                        break
+            messages = filtered_messages
+        else:
+            # Filter received emails by sender
+            messages = [msg for msg in messages if msg.get("from", {}).get("emailAddress", {}).get("address", "").lower() == filters['from_email'].lower()]
 
     sanitized_messages = []
     if b_sanitize:
         for message in messages:
             try:
-                sanitized_messages.append(sanitize_message(message))
+                sanitized_messages.append(sanitize_message(message, email_type))
             except Exception as e:
                 continue
     else:
+        # Add email type to unsanitized messages for processing
+        for message in messages:
+            message["emailType"] = email_type
         sanitized_messages = messages
+    
     return {
         "messages": sanitized_messages,
         "next_link": response_data.get("@odata.nextLink"),
         "total_count": len(sanitized_messages)
     }, None
-
-
 
 async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
     """
@@ -310,11 +385,18 @@ async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
             if body_data and body_data.get("content"):
                 content = html2text.html2text(body_data.get("content", "")).replace("\n", "    ")
             
-            # Extract sender information
-            sender_data = message.get("sender", {})
-            sender_email_data = sender_data.get("emailAddress", {}) if sender_data else {}
-            sender_name = sender_email_data.get("name", "") if sender_email_data else ""
-            sender_address = sender_email_data.get("address", "") if sender_email_data else ""
+            # Extract sender information (handle both sent and received emails)
+            email_type = message.get("emailType", "received")
+            if email_type == "sent":
+                sender_data = message.get("sender", {})
+                sender_email_data = sender_data.get("emailAddress", {}) if sender_data else {}
+                sender_name = sender_email_data.get("name", "") if sender_email_data else ""
+                sender_address = sender_email_data.get("address", "") if sender_email_data else ""
+            else:
+                sender_data = message.get("from", {})
+                sender_email_data = sender_data.get("emailAddress", {}) if sender_data else {}
+                sender_name = sender_email_data.get("name", "") if sender_email_data else ""
+                sender_address = sender_email_data.get("address", "") if sender_email_data else ""
             
             # Prepare email data for vector processing
             email_data = {
@@ -330,7 +412,8 @@ async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
                 "is_read": message.get("isRead", False),
                 "flag_status": message.get("flag", {}).get("flagStatus", "notFlagged"),
                 "categories": json.dumps(message.get("categories", [])),
-                "inference_classification": message.get("inferenceClassification", "")
+                "inference_classification": message.get("inferenceClassification", ""),
+                "email_type": email_type  # Add email type to stored data
             }
             
             # Create vector embeddings
@@ -340,7 +423,7 @@ async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
             total_chunks_skipped += chunks_skipped
             total_processed += 1
             
-            logging.info(f"Processed email {email_data['email_id']}: {chunks_stored} chunks stored, {chunks_skipped} skipped")
+            logging.info(f"Processed {email_type} email {email_data['email_id']}: {chunks_stored} chunks stored, {chunks_skipped} skipped")
             
         except Exception as e:
             logging.error(f"Error processing email document: {e}")
@@ -361,6 +444,7 @@ async def sync_emails(
     search: Optional[str] = None,
     top: Optional[int] = Query(10, ge=1, le=MAX_TOP),
     orderby: Optional[str] = "receivedDateTime desc",
+    email_type: Optional[str] = "received",  # New parameter
     next_url: Optional[str] = None
 ):
     # Get access token
@@ -374,71 +458,153 @@ async def sync_emails(
 
     headers = build_headers(access_token)
 
-    # Handle next_url for pagination
-    if next_url:
-        if not next_url.startswith("https://graph.microsoft.com"):
-            return JSONResponse({"error": "Invalid next_url provided."}, status_code=400)
-        url = next_url
-    else:
-        # Validate and prepare filters
-        filters, error_response = await validate_and_prepare_filters(
-            start_date, end_date, from_email, unread_only, search, top, orderby
-        )
-        if error_response:
-            return error_response
+    # Handle both received and sent emails
+    if email_type == "both":
+        # Process both received and sent emails
+        all_messages = []
+        all_stats = {
+            "total_emails_processed": 0,
+            "total_chunks_stored": 0,
+            "total_chunks_skipped": 0
+        }
+        mysql_stats = {
+            "stored_emails": 0,
+            "skipped_duplicates": 0
+        }
         
-        url = build_graph_url(filters)
-
-    # Make API request
-    response, error_response = await make_graph_request(url, headers, ait_id)
-    if error_response:
-        return error_response
-
-    # Process response
-    try:
-        data = response.json()
-        result, error_response = process_graph_response(data, {
-            'start_date': start_date,
-            'end_date': end_date,
-            'from_email': from_email,
-            'unread_only': unread_only,
-            'search': search,
-            'top': top
-        }, b_sanitize=False)
-        if error_response:
-            return error_response
-
-        # Process emails and create vector embeddings
-        vector_stats = await process_email_documents(messages=result["messages"], ait_id=ait_id)
+        for current_type in ["received", "sent"]:
+            # Validate and prepare filters for current type
+            filters, error_response = await validate_and_prepare_filters(
+                start_date, end_date, from_email, unread_only, search, top, orderby, current_type
+            )
+            if error_response:
+                return error_response
+            
+            url = build_graph_url(filters)
+            
+            # Make API request
+            response, error_response = await make_graph_request(url, headers, ait_id)
+            if error_response:
+                return error_response
+            
+            # Process response
+            try:
+                data = response.json()
+                result, error_response = process_graph_response(data, filters, b_sanitize=False)
+                if error_response:
+                    return error_response
+                
+                # Add to all messages
+                all_messages.extend(result["messages"])
+                
+            except ValueError as e:
+                return JSONResponse({
+                    "error": f"Failed to parse JSON response from Microsoft Graph API for {current_type} emails.",
+                    "details": str(e)
+                }, status_code=500)
+            except Exception as e:
+                return JSONResponse({
+                    "error": f"Unexpected error processing {current_type} emails.",
+                    "details": str(e)
+                }, status_code=500)
         
-        # Store emails in MySQL
-        stored_count, skipped_count = await store_emails_in_mysql(result["messages"], ait_id)
-
+        # Process all messages together
+        if all_messages:
+            # Process emails and create vector embeddings
+            vector_stats = await process_email_documents(messages=all_messages, ait_id=ait_id)
+            
+            # Store emails in MySQL
+            stored_count, skipped_count = await store_emails_in_mysql(all_messages, ait_id)
+            
+            all_stats.update(vector_stats)
+            mysql_stats["stored_emails"] = stored_count
+            mysql_stats["skipped_duplicates"] = skipped_count
+        
         return {
             "success": True,
-            "mysql_storage": {
-                "stored_emails": stored_count,
-                "skipped_duplicates": skipped_count
-            },
-            "vector_processing": vector_stats,
-            "next_link": result.get("next_link"),
-            "total_processed": len(result["messages"]),
+            "mysql_storage": mysql_stats,
+            "vector_processing": all_stats,
+            "total_processed": len(all_messages),
+            "email_types_processed": ["received", "sent"],
             "filters_applied": {
                 "start_date": start_date,
                 "end_date": end_date,
                 "from_email": from_email,
                 "unread_only": unread_only,
-                "search": search
+                "search": search,
+                "email_type": email_type
             }
         }
+    
+    else:
+        # Handle next_url for pagination
+        if next_url:
+            if not next_url.startswith("https://graph.microsoft.com"):
+                return JSONResponse({"error": "Invalid next_url provided."}, status_code=400)
+            url = next_url
+        else:
+            # Validate and prepare filters
+            filters, error_response = await validate_and_prepare_filters(
+                start_date, end_date, from_email, unread_only, search, top, orderby, email_type
+            )
+            if error_response:
+                return error_response
+            
+            url = build_graph_url(filters)
 
-    except ValueError as e:
-        return JSONResponse({
-            "error": "Failed to parse JSON response from Microsoft Graph API.",
-            "details": str(e)
-        }, status_code=500)
-    except Exception as e:
-        return JSONResponse({
-            "error": "Unexpected error processing response.",
-            "details": str(e)
-        }, status_code=500)
+        # Make API request
+        response, error_response = await make_graph_request(url, headers, ait_id)
+        if error_response:
+            return error_response
+
+        # Process response
+        try:
+            data = response.json()
+            result, error_response = process_graph_response(data, {
+                'start_date': start_date,
+                'end_date': end_date,
+                'from_email': from_email,
+                'unread_only': unread_only,
+                'search': search,
+                'top': top,
+                'email_type': email_type
+            }, b_sanitize=False)
+            if error_response:
+                return error_response
+
+            # Process emails and create vector embeddings
+            vector_stats = await process_email_documents(messages=result["messages"], ait_id=ait_id)
+            
+            # Store emails in MySQL
+            stored_count, skipped_count = await store_emails_in_mysql(result["messages"], ait_id)
+
+            return {
+                "success": True,
+                "mysql_storage": {
+                    "stored_emails": stored_count,
+                    "skipped_duplicates": skipped_count
+                },
+                "vector_processing": vector_stats,
+                "next_link": result.get("next_link"),
+                "total_processed": len(result["messages"]),
+                "email_type_processed": email_type,
+                "filters_applied": {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "from_email": from_email,
+                    "unread_only": unread_only,
+                    "search": search,
+                    "email_type": email_type
+                }
+            }
+
+        except ValueError as e:
+            return JSONResponse({
+                "error": "Failed to parse JSON response from Microsoft Graph API.",
+                "details": str(e)
+            }, status_code=500)
+        except Exception as e:
+            return JSONResponse({
+                "error": "Unexpected error processing response.",
+                "details": str(e)
+            }, status_code=500)
