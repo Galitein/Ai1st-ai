@@ -10,9 +10,9 @@ from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from src.app.services.ms_exchange.mse_token_store import get_token, refresh_access_token, store_emails_in_mysql
-from src.app.services.ms_exchange.mse_doc_processing import EmailVectorService
-
+from src.app.services.ms_exchange.mse_token_store import get_token, refresh_access_token
+from src.database.sql_record_manager import sql_record_manager
+from src.app.services.text_processing.create_embeddings import process_and_build_index
 load_dotenv(override=True)
 
 ms_router = APIRouter(prefix="/ms_exchange")
@@ -30,7 +30,6 @@ MAX_TOP = 100
 MAX_SEARCH_LENGTH = 255
 MAX_DATE_RANGE_DAYS = 365
 DEFAULT_DAYS_RANGE = 365
-vector_service = EmailVectorService()
 
 # Helper functions
 def validate_date_format(date_str: str) -> bool:
@@ -435,42 +434,33 @@ async def process_email_documents(messages: List[Dict], ait_id: str) -> Dict:
         "total_chunks_skipped": total_chunks_skipped
     }
 
-
 async def sync_emails(
-    ait_id: str = DEFAULT_USER_ID,
+    ait_id: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     from_email: Optional[str] = None,
     unread_only: Optional[bool] = False,
     search: Optional[str] = None,
-    top: Optional[int] = Query(10, ge=1, le=MAX_TOP),
+    top: Optional[int] = 10,
     orderby: Optional[str] = "receivedDateTime desc",
     email_type: Optional[str] = "received", 
     next_url: Optional[str] = None
 ):
-
+    """Updated sync_emails function that uses your existing indexing infrastructure."""
+    
+    # Get token data (assuming this function exists in your code)
     token_data = await get_token(ait_id)
     if not token_data:
-        return JSONResponse({"error": "User not authenticated."}, status_code=401)
-
+        return {"error": "User not authenticated.", "status_code": 401}
+    
     access_token = token_data.get("access_token")
     if not access_token:
-        return JSONResponse({"error": "Invalid access token."}, status_code=401)
-
-    headers = build_headers(access_token)
-
-    all_messages = []
-    all_new_emails_for_embedding = []  
-    all_stats = {
-        "total_emails_processed": 0,
-        "total_chunks_stored": 0,
-        "total_chunks_skipped": 0
-    }
-    mysql_stats = {
-        "stored_emails": 0,
-        "skipped_duplicates": 0
-    }
+        return {"error": "Invalid access token.", "status_code": 401}
     
+    headers = build_headers(access_token)
+    all_messages = []
+    
+    # Process both received and sent emails
     for current_type in ["received", "sent"]:
         filters, error_response = await validate_and_prepare_filters(
             start_date, end_date, from_email, unread_only, search, top, orderby, current_type
@@ -490,45 +480,68 @@ async def sync_emails(
             if error_response:
                 return error_response
             
-            stored_count, skipped_count, new_emails = await store_emails_in_mysql(result["messages"], ait_id)
-
-            mysql_stats["stored_emails"] += stored_count
-            mysql_stats["skipped_duplicates"] += skipped_count
-            
-            all_new_emails_for_embedding.extend(new_emails)
-            all_messages.extend(result["messages"]) 
+            all_messages.extend(result["messages"])
             
         except ValueError as e:
-            return JSONResponse({
+            return {
                 "error": f"Failed to parse JSON response from Microsoft Graph API for {current_type} emails.",
-                "details": str(e)
-            }, status_code=500)
+                "details": str(e),
+                "status_code": 500
+            }
         except Exception as e:
-            return JSONResponse({
+            return {
                 "error": f"Unexpected error processing {current_type} emails.",
-                "details": str(e)
-            }, status_code=500)
+                "details": str(e),
+                "status_code": 500
+            }
     
-    if all_new_emails_for_embedding:
-        logging.info(f"Processing {len(all_new_emails_for_embedding)} new emails for vector embeddings out of {len(all_messages)} total emails")
-        vector_stats = await process_email_documents(messages=all_new_emails_for_embedding, ait_id=ait_id)
-        all_stats.update(vector_stats)
+    # Use your existing indexing infrastructure
+    if all_messages:
+        logging.info(f"Processing {len(all_messages)} emails using existing indexing infrastructure")
+        
+        # Call your existing process_and_build_index function with email destination
+        index_result = await process_and_build_index(
+            ait_id=ait_id,
+            file_names= [],
+            document_collection="log_mse_email",
+            destination="email",
+            messages=all_messages
+        )
+        
+        if index_result["status"]:
+            return {
+                "success": True,
+                "total_processed": len(all_messages),
+                "email_types_processed": ["received", "sent"],
+                "indexing_result": index_result["index_result"],
+                "message": "Emails successfully indexed using existing infrastructure",
+                "filters_applied": {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "from_email": from_email,
+                    "unread_only": unread_only,
+                    "search": search,
+                    "email_type": email_type
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "error": index_result["message"],
+                "total_processed": len(all_messages)
+            }
     else:
-        logging.info("No new emails to process for vector embeddings")
-    
-    return {
-        "success": True,
-        "mysql_storage": mysql_stats,
-        "vector_processing": all_stats,
-        "total_processed": len(all_messages),
-        "new_emails_for_embedding": len(all_new_emails_for_embedding),
-        "email_types_processed": ["received", "sent"],
-        "filters_applied": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "from_email": from_email,
-            "unread_only": unread_only,
-            "search": search,
-            "email_type": email_type
+        logging.info("No emails to process")
+        return {
+            "success": True,
+            "total_processed": 0,
+            "message": "No emails found to process",
+            "filters_applied": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "from_email": from_email,
+                "unread_only": unread_only,
+                "search": search,
+                "email_type": email_type
+            }
         }
-    }

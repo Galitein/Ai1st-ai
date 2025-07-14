@@ -21,6 +21,7 @@ logging.basicConfig(
 # Load environment variables
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+INCLUDE_EMAIL_CONTEXT = os.getenv("INCLUDE_EMAIL_CONTEXT") == "True"
 
 # Initialize OpenAI async client
 client = AsyncOpenAI(api_key=api_key)
@@ -64,6 +65,15 @@ async def generate_chat_completion(ait_id:str, query:str):
             logging.error("No results found for the query.")
             return {'status': False, 'message': "No results found for the query."}
         
+        if INCLUDE_EMAIL_CONTEXT:
+            extracted_mse_email = await search(
+            ait_id=ait_id,
+            query=query,
+            document_collection="logs_mse_email",
+            limit=8,
+            similarity_threshold=0.3
+            )
+
         extracted_log = await search(
             ait_id=ait_id,
             query=query,
@@ -75,9 +85,13 @@ async def generate_chat_completion(ait_id:str, query:str):
             logging.error("No results found for the query.")
             return {'status': False, 'message': "No results found for the query."}
         
-        extract_trello_data = await search_trello_documents(query, ait_id)
+        if not INCLUDE_EMAIL_CONTEXT:
+            extract_trello_data = await search_trello_documents(query, ait_id)
+            context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + extract_trello_data
 
-        context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + extract_trello_data
+        else: 
+            context_results = extracted_bib.get("results", []) + extracted_log.get("results", []) + extracted_mse_email.get("results", [])
+        
         context_text = "\n\n".join(
                 f"File: {r.get('file_name', '')}\nContent: {r.get('page_content', '')}"
                 for r in context_results
