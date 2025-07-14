@@ -1,15 +1,14 @@
 import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Query
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from src.app.services.trello_service import (
     trello_auth, 
     trello_document_search, 
-    trello_data_loader,
     trello_data_sync
 )
 from src.app.models.trello_auth_model import TrelloTokenPayload
-
+from src.app.models.input_models import ChatInput, AitIdInput
 load_dotenv(override=True)
 
 trello_router = APIRouter(prefix="/trello", tags=["Trello"])
@@ -57,7 +56,6 @@ async def auth_callback(request: Request):
     """ 
     return HTMLResponse(content=html_with_user)
 
-
 @trello_router.post("/auth/save-token")
 async def save_token_endpoint(payload: TrelloTokenPayload):
     """
@@ -66,30 +64,69 @@ async def save_token_endpoint(payload: TrelloTokenPayload):
     try:
         response = await trello_auth.save_token(payload.ait_id, {"token":payload.token})
         if not response:
-            raise HTTPException(status_code=400, detail="Failed to save token")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": "Failed to save token"
+                }
+            )
         return {"status": True, "message": "Token saved successfully"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Failed to save token")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": False,
+                "message": "Failed to save token"
+            }
+        )
 
 @trello_router.post("/trello_document_search")
-async def trello_search(ait_id: str, query: str):
+async def trello_search(input_data: ChatInput):
     try:
-        trello_documents = await trello_document_search.search_trello_documents(ait_id=ait_id, query=query)
+        trello_documents = await trello_document_search.search_trello_documents(
+            ait_id=input_data.ait_id, 
+            query=input_data.query
+            )
         if not trello_documents.get("status"):
-            raise HTTPException(status_code=400, detail=trello_documents.get("message"))
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": trello_documents.get("message")
+                }
+            )
         return trello_documents
     except Exception as e:
-        raise HTTPException(status_code=500, detail=trello_documents.get("message", str(e)))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": False,
+                "message": trello_documents.get("message", str(e))
+            }
+        )
 
 @trello_router.post("/trello_document_sync")
-async def trello_sync(ait_id: str):
+async def trello_sync(input_data: AitIdInput):
     """
     Sync Trello documents for the authenticated user
     """
     try:
-        trello_documents = await trello_data_sync.trello_data_sync(ait_id=ait_id)
+        trello_documents = await trello_data_sync.trello_data_sync(ait_id=input_data.ait_id)
         if not trello_documents.get("status"):
-            raise HTTPException(status_code=400, detail=trello_documents.get("message"))
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": False,
+                    "message": trello_documents.get("message")
+                }
+            )
         return trello_documents
     except Exception as e:
-        raise HTTPException(status_code=500, detail=trello_documents.get("message", str(e)))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": False,
+                "message": trello_documents.get("message", str(e))
+            }
+        )

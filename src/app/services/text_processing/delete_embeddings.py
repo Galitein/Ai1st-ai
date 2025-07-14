@@ -36,8 +36,8 @@ async def delete_file_index(ait_id, file_names, qdrant_collection):
             prefix = f"{ait_id}_{file_name}_"
             file_source_ids = [sid for sid in all_source_ids if sid.startswith(prefix)]
             if not file_source_ids:
-                logging.info(f"No index found for file: {file_name}")
-                continue
+                logging.error(f"No index found for file: {file_name}")
+                return {"status": False, "message": f"No index found for file: {file_name}"}
 
             for source_id in file_source_ids:
                 await qdrant_client.delete_by_source_id(
