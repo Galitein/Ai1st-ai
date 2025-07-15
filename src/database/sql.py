@@ -1,8 +1,9 @@
 import os
-from dotenv import load_dotenv
-import aiomysql
-from typing import Dict, List, Any, Optional
+import re
 import logging
+import aiomysql
+from dotenv import load_dotenv
+from typing import Dict, List, Any, Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -69,8 +70,8 @@ class AsyncMySQLDatabase:
                     return result
         except Exception as e:
             logger.error(f"Error executing query: {e}")
-            return None
-    
+            raise e
+
     async def execute_non_query(self, query: str, params: tuple = None) -> bool:
         """Execute INSERT, UPDATE, DELETE queries and return status"""
         try:
@@ -173,4 +174,3 @@ class AsyncMySQLDatabase:
         if result and result[0]['count'] > 0:
             return True
         return False
-

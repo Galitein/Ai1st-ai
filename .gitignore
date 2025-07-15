@@ -29,7 +29,6 @@ MANIFEST
 # Project-specific data and cache
 index/
 dummy_data/
-prompts/
 uv-x86_64-unknown-linux-gnu/
 testing_rohan.py
 

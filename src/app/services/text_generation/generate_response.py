@@ -94,6 +94,15 @@ async def generate_chat_completion(ait_id:str, query:str):
 
         trello_data_item = [v for k, v in extract_trello_data.items()]
         logging.info(f"Trello data items: {trello_data_item}")
+
+        extracted_mse_email = await search(
+            ait_id=ait_id,
+            query=query,
+            document_collection="log_mse_email",
+            limit=8,
+            similarity_threshold=0.3
+            )
+
         bib_log_context_results = extracted_bib.get("results", []) + extracted_log.get("results", [])
         logging.info(f"Context results: {bib_log_context_results}")
 
@@ -102,6 +111,7 @@ async def generate_chat_completion(ait_id:str, query:str):
             {"role": "user", "content": json.dumps(bib_log_context_results, indent=2)},
             {"role": "user", "content": "---BEGIN PERSONAL CONTEXT (PRE)---\n" + json.dumps(pre_context, indent=2) + "\n---END PERSONAL CONTEXT---"},
             {"role": "user", "content": "---BEGIN TRELLO DATA---\n" + json.dumps(trello_data_item, indent=2) + "\n---END TRELLO DATA---"},
+            {"role": "user", "content": "---BEGIN EMAIL DATA---\n" + json.dumps(extracted_mse_email, indent=2) + "\n---END EMAIL DATA---"},
             {"role": "user", "content": query}
         ]
         logging.info("Conversation history prepared.")

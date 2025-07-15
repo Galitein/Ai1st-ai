@@ -14,6 +14,7 @@ from src.database.qdrant_service import QdrantService
 from src.app.services.google_service.drive_file_loader import load_google_documents
 from src.app.services.text_processing.local_file_loader import load_local_documents
 from src.app.services.trello_service.trello_file_loader import load_trello_documents
+from src.app.services.ms_exchange.mse_doc_processing import load_email_documents
 
 load_dotenv()
 
@@ -30,7 +31,7 @@ logging.basicConfig(
     ]
 )
 
-async def process_and_build_index(ait_id, file_names, document_collection, destination):
+async def process_and_build_index(ait_id, file_names, document_collection, destination, messages=None):
     """
     Incrementally indexes files using Qdrant and tracks file states using SQLRecordManager.
 
@@ -122,6 +123,23 @@ async def process_and_build_index(ait_id, file_names, document_collection, desti
                 "message": f"Unexpected error: {e}",
                 "index_result": None
             }
+    elif destination == "email" and messages:
+        if not messages:
+            logging.error("No email messages provided for email destination")
+            return {
+                "status": False,
+                "message": "No email messages provided for email destination",
+                "index_result": None
+            }
+        
+        documents = await load_email_documents(
+            messages=messages,
+            ait_id=ait_id,
+            document_collection=document_collection,
+            logger=logging
+        )
+        logging.info(f"Loaded {len(documents)} email documents for indexing.")
+    # 2. Create Embeddings of the chunks
     try:
         embedding = SentenceTransformerEmbeddings(model_name=MODEL_NAME)
 
