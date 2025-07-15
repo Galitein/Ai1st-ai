@@ -1,6 +1,8 @@
 import os
 import json
 import re
+import time
+import asyncio
 import requests
 import html2text
 from typing import Optional, List, Dict
@@ -8,28 +10,31 @@ import logging
 from dotenv import load_dotenv
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Query
+from fastapi import Query
 from fastapi.responses import JSONResponse
 from src.app.services.ms_exchange.mse_token_store import get_token, refresh_access_token
 from src.database.sql_record_manager import sql_record_manager
 from src.app.services.text_processing.create_embeddings import process_and_build_index
-load_dotenv(override=True)
 
-ms_router = APIRouter(prefix="/ms_exchange")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("msexchange_mse_main.log"),
+        logging.StreamHandler()
+    ]
+)
 
-AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
-AZURE_SECRET_ID = os.getenv("AZURE_SECRET_VALUE")
-TENANT_ID = os.getenv("TENANT_ID")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
-AUTHORITY = "https://login.microsoftonline.com/common"
-AUTH_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
-TOKEN_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
-GRAPH_SCOPES = ["Mail.ReadWrite", "Calendars.ReadWrite", "Contacts.ReadWrite"]
-DEFAULT_USER_ID = "anonymous"
 MAX_TOP = 100
 MAX_SEARCH_LENGTH = 255
-MAX_DATE_RANGE_DAYS = 365
-DEFAULT_DAYS_RANGE = 365
+MAX_DATE_RANGE_DAYS = 3
+DEFAULT_DAYS_RANGE = 2
+
+BATCH_SIZE = 1000
+MAX_EMAILS_PER_REQUEST = 999
+DELAY_BETWEEN_BATCHES = 0.1
+MAX_CONCURRENT_REQUESTS = 4
+SYNC_ALL_CHUNK_SIZE = 100
 
 # Helper functions
 def validate_date_format(date_str: str) -> bool:
@@ -443,12 +448,11 @@ async def sync_emails(
     search: Optional[str] = None,
     top: Optional[int] = 10,
     orderby: Optional[str] = "receivedDateTime desc",
-    email_type: Optional[str] = "received", 
+    email_type: Optional[str] = "both", 
     next_url: Optional[str] = None
 ):
-    """Updated sync_emails function that uses your existing indexing infrastructure."""
+    """Updated sync_emails function that processes ALL emails with proper pagination."""
     
-    # Get token data (assuming this function exists in your code)
     token_data = await get_token(ait_id)
     if not token_data:
         return {"error": "User not authenticated.", "status_code": 401}
@@ -458,90 +462,440 @@ async def sync_emails(
         return {"error": "Invalid access token.", "status_code": 401}
     
     headers = build_headers(access_token)
-    all_messages = []
+    
+    total_processed = 0
+    total_chunks_stored = 0
+    total_chunks_skipped = 0
     
     # Process both received and sent emails
-    for current_type in ["received", "sent"]:
+    email_types_to_process = ["received", "sent"] if email_type == "both" else [email_type]
+    
+    for current_type in email_types_to_process:
+        logging.info(f"Starting to process {current_type} emails...")
+        
+        # Prepare filters for current email type
         filters, error_response = await validate_and_prepare_filters(
             start_date, end_date, from_email, unread_only, search, top, orderby, current_type
         )
         if error_response:
             return error_response
         
-        url = build_graph_url(filters)
+        # Start with the initial URL for current email type
+        current_url = next_url if next_url else build_graph_url(filters)
+        page_count = 0
+        current_type_processed = 0
         
-        response, error_response = await make_graph_request(url, headers, ait_id)
-        if error_response:
-            return error_response
-        
-        try:
-            data = response.json()
-            result, error_response = process_graph_response(data, filters, b_sanitize=False)
+        # Continue fetching ALL pages for current email type
+        while current_url:
+            page_count += 1
+            logging.info(f"Fetching page {page_count} for {current_type} emails...")
+            
+            response, error_response = await make_graph_request(current_url, headers, ait_id)
             if error_response:
+                logging.error(f"Error fetching page {page_count} for {current_type} emails: {error_response}")
                 return error_response
             
-            all_messages.extend(result["messages"])
-            
-        except ValueError as e:
-            return {
-                "error": f"Failed to parse JSON response from Microsoft Graph API for {current_type} emails.",
-                "details": str(e),
-                "status_code": 500
-            }
-        except Exception as e:
-            return {
-                "error": f"Unexpected error processing {current_type} emails.",
-                "details": str(e),
-                "status_code": 500
-            }
-    
-    # Use your existing indexing infrastructure
-    if all_messages:
-        logging.info(f"Processing {len(all_messages)} emails using existing indexing infrastructure")
+            try:
+                data = response.json()
+                result, error_response = process_graph_response(data, filters, b_sanitize=False)
+                if error_response:
+                    logging.error(f"Error processing page {page_count} for {current_type} emails: {error_response}")
+                    return error_response
+                
+                page_messages = result["messages"]
+                if not page_messages:
+                    logging.info(f"No more {current_type} emails found on page {page_count}")
+                    break
+                
+                logging.info(f"Found {len(page_messages)} {current_type} emails on page {page_count}")
+                
+                # Process current page messages immediately
+                if page_messages:
+                    index_result = await process_and_build_index(
+                        ait_id=ait_id,
+                        file_names=[],
+                        document_collection="log_mse_email",
+                        destination="email",
+                        messages=page_messages
+                    )
+                    
+                    if not index_result["status"]:
+                        logging.error(f"Failed to index page {page_count} for {current_type} emails: {index_result['message']}")
+                        return {
+                            "success": False,
+                            "error": index_result["message"],
+                            "total_processed": total_processed,
+                            "pages_processed": page_count - 1
+                        }
+                    
+                    # Update counters
+                    page_processed = len(page_messages)
+                    total_processed += page_processed
+                    current_type_processed += page_processed
+                    
+                    # Update chunk statistics if available
+                    if "index_result" in index_result:
+                        total_chunks_stored += index_result["index_result"].get("chunks_stored", 0)
+                        total_chunks_skipped += index_result["index_result"].get("chunks_skipped", 0)
+                    
+                    logging.info(f"Successfully processed page {page_count}: {page_processed} {current_type} emails, Total processed: {total_processed}")
+                
+                # Get next page URL
+                current_url = result.get("next_link")
+                
+                # Small delay to avoid rate limiting
+                if current_url:
+                    await asyncio.sleep(DELAY_BETWEEN_BATCHES)
+                
+            except ValueError as e:
+                logging.error(f"Failed to parse JSON response for {current_type} emails on page {page_count}: {e}")
+                return {
+                    "error": f"Failed to parse JSON response from Microsoft Graph API for {current_type} emails.",
+                    "details": str(e),
+                    "status_code": 500
+                }
+            except Exception as e:
+                logging.error(f"Unexpected error processing {current_type} emails on page {page_count}: {e}")
+                return {
+                    "error": f"Unexpected error processing {current_type} emails.",
+                    "details": str(e),
+                    "status_code": 500
+                }
         
-        # Call your existing process_and_build_index function with email destination
+        logging.info(f"Completed processing {current_type} emails: {current_type_processed} emails across {page_count} pages")
+    
+    return {
+        "success": True,
+        "total_processed": total_processed,
+        "total_chunks_stored": total_chunks_stored,
+        "total_chunks_skipped": total_chunks_skipped,
+        "email_types_processed": email_types_to_process,
+        "message": f"Successfully processed all emails across all pages",
+        "filters_applied": {
+            "start_date": start_date,
+            "end_date": end_date,
+            "from_email": from_email,
+            "unread_only": unread_only,
+            "search": search,
+            "email_type": email_type
+        }
+    }
+
+
+async def sync_all_emails(
+    ait_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    batch_size: int = BATCH_SIZE,
+    max_emails: Optional[int] = None,
+    resume_token: Optional[str] = None,
+    default_days_sync: Optional[int] = 1825
+) -> Dict:
+    """Sync all emails with proper pagination handling for both received and sent emails."""
+    start_time = time.time()
+    
+    token_data = await get_token(ait_id)
+    if not token_data:
+        return {"error": "User not authenticated.", "status_code": 401}
+    
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return {"error": "Invalid access token.", "status_code": 401}
+    
+    headers = build_headers(access_token)
+    
+    if not start_date:
+        start_date = (datetime.utcnow() - timedelta(days=default_days_sync)).strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+    
+    logging.info(f"Starting full email sync for user {ait_id} from {start_date} to {end_date}")
+    
+    total_stats = {
+        "total_emails_processed": 0,
+        "total_chunks_stored": 0,
+        "total_chunks_skipped": 0,
+        "batches_processed": 0,
+        "pages_processed": 0,
+        "received_emails": 0,
+        "sent_emails": 0,
+        "errors": [],
+        "processing_time": 0,
+        "next_resume_token": None
+    }
+    
+    try:
+        # Determine which email types to process
+        email_types = ["received", "sent"]
+        
+        for email_type in email_types:
+            logging.info(f"Starting to process {email_type} emails...")
+            
+            filters = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "email_type": email_type,
+                "top": min(batch_size, MAX_EMAILS_PER_REQUEST),
+                "orderby": "sentDateTime desc" if email_type == "sent" else "receivedDateTime desc"
+            }
+            
+            # Use resume token if it matches current email type
+            if resume_token and f"type={email_type}" in resume_token:
+                current_url = resume_token
+            else:
+                current_url = build_graph_url(filters)
+            
+            page_count = 0
+            current_type_processed = 0
+            
+            # Process ALL pages for current email type
+            while current_url and (not max_emails or total_stats["total_emails_processed"] < max_emails):
+                page_count += 1
+                total_stats["pages_processed"] += 1
+                
+                logging.info(f"Processing page {page_count} for {email_type} emails...")
+                
+                response, error_response = await make_graph_request(current_url, headers, ait_id)
+                if error_response:
+                    error_msg = f"API request failed for {email_type} page {page_count}: {error_response}"
+                    total_stats["errors"].append(error_msg)
+                    logging.error(error_msg)
+                    break
+                
+                try:
+                    data = response.json()
+                    result, error_response = process_graph_response(data, filters, b_sanitize=False)
+                    if error_response:
+                        error_msg = f"Response processing failed for {email_type} page {page_count}: {error_response}"
+                        total_stats["errors"].append(error_msg)
+                        logging.error(error_msg)
+                        break
+                    
+                    messages = result["messages"]
+                    if not messages:
+                        logging.info(f"No more {email_type} emails to process on page {page_count}")
+                        break
+                    
+                    # Apply max_emails limit
+                    if max_emails and total_stats["total_emails_processed"] + len(messages) > max_emails:
+                        remaining = max_emails - total_stats["total_emails_processed"]
+                        messages = messages[:remaining]
+                        logging.info(f"Applying max_emails limit: processing {len(messages)} out of {len(result['messages'])} messages")
+                    
+                    # Process the batch
+                    batch_result = await _process_email_batch(messages, ait_id)
+                    
+                    if not batch_result["success"]:
+                        error_msg = f"Batch processing failed for {email_type} page {page_count}: {batch_result.get('error', 'Unknown error')}"
+                        total_stats["errors"].append(error_msg)
+                        logging.error(error_msg)
+                        # Continue to next page instead of breaking
+                        current_url = result.get("next_link")
+                        continue
+                    
+                    # Update stats
+                    batch_processed = len(messages)
+                    total_stats["total_emails_processed"] += batch_processed
+                    total_stats["total_chunks_stored"] += batch_result["chunks_stored"]
+                    total_stats["total_chunks_skipped"] += batch_result["chunks_skipped"]
+                    total_stats["batches_processed"] += 1
+                    current_type_processed += batch_processed
+                    
+                    if email_type == "received":
+                        total_stats["received_emails"] += batch_processed
+                    else:
+                        total_stats["sent_emails"] += batch_processed
+                    
+                    logging.info(
+                        f"Processed page {page_count} of {email_type} emails: "
+                        f"{batch_processed} emails, {batch_result['chunks_stored']} chunks stored, "
+                        f"Total processed: {total_stats['total_emails_processed']}"
+                    )
+                    
+                    # Get next page URL
+                    current_url = result.get("next_link")
+                    if current_url:
+                        # Include email type in resume token
+                        total_stats["next_resume_token"] = f"{current_url}&type={email_type}"
+                        await asyncio.sleep(DELAY_BETWEEN_BATCHES)
+                    else:
+                        total_stats["next_resume_token"] = None
+                        logging.info(f"Completed all pages for {email_type} emails")
+                    
+                    # Check if we've reached max emails
+                    if max_emails and total_stats["total_emails_processed"] >= max_emails:
+                        logging.info(f"Reached max_emails limit: {max_emails}")
+                        break
+                
+                except ValueError as e:
+                    error_msg = f"JSON parsing error for {email_type} page {page_count}: {str(e)}"
+                    total_stats["errors"].append(error_msg)
+                    logging.error(error_msg)
+                    break
+                except Exception as e:
+                    error_msg = f"Unexpected error processing {email_type} page {page_count}: {str(e)}"
+                    total_stats["errors"].append(error_msg)
+                    logging.error(error_msg)
+                    # Continue to next page instead of breaking
+                    current_url = result.get("next_link")
+                    continue
+            
+            logging.info(f"Completed processing {email_type} emails: {current_type_processed} emails across {page_count} pages")
+            
+            # If we've reached max emails, break from email type loop
+            if max_emails and total_stats["total_emails_processed"] >= max_emails:
+                break
+    
+    except Exception as e:
+        error_msg = f"Critical error in sync_all_emails: {str(e)}"
+        total_stats["errors"].append(error_msg)
+        logging.error(error_msg)
+    
+    total_stats["processing_time"] = time.time() - start_time
+    
+    success = len(total_stats["errors"]) == 0
+    
+    result = {
+        "success": success,
+        "message": "Email sync completed successfully" if success else "Email sync completed with errors",
+        "statistics": total_stats,
+        "date_range": {"start_date": start_date, "end_date": end_date}
+    }
+    
+    if not success:
+        result["error"] = "Completed with errors"
+    
+    return result
+
+
+async def _process_email_batch(messages: List[Dict], ait_id: str) -> Dict:
+    """
+    Process a batch of emails using the existing indexing infrastructure.
+    Enhanced with better error handling and logging.
+    """
+    try:
+        if not messages:
+            return {
+                "chunks_stored": 0,
+                "chunks_skipped": 0,
+                "success": True,
+                "message": "No messages to process"
+            }
+        
+        logging.info(f"Processing batch of {len(messages)} emails for user {ait_id}")
+        
         index_result = await process_and_build_index(
             ait_id=ait_id,
-            file_names= [],
+            file_names=[],
             document_collection="log_mse_email",
             destination="email",
-            messages=all_messages
+            messages=messages
         )
         
         if index_result["status"]:
+            chunks_stored = index_result.get("index_result", {}).get("chunks_stored", 0)
+            chunks_skipped = index_result.get("index_result", {}).get("chunks_skipped", 0)
+            
+            logging.info(f"Batch processing successful: {chunks_stored} chunks stored, {chunks_skipped} chunks skipped")
+            
             return {
+                "chunks_stored": chunks_stored,
+                "chunks_skipped": chunks_skipped,
                 "success": True,
-                "total_processed": len(all_messages),
-                "email_types_processed": ["received", "sent"],
-                "indexing_result": index_result["index_result"],
-                "message": "Emails successfully indexed using existing infrastructure",
-                "filters_applied": {
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "from_email": from_email,
-                    "unread_only": unread_only,
-                    "search": search,
-                    "email_type": email_type
-                }
+                "message": f"Successfully processed {len(messages)} emails"
             }
         else:
+            error_msg = index_result.get("message", "Unknown indexing error")
+            logging.error(f"Indexing failed: {error_msg}")
             return {
+                "chunks_stored": 0,
+                "chunks_skipped": 0,
                 "success": False,
-                "error": index_result["message"],
-                "total_processed": len(all_messages)
+                "error": error_msg
             }
-    else:
-        logging.info("No emails to process")
+    
+    except Exception as e:
+        error_msg = f"Error in _process_email_batch: {str(e)}"
+        logging.error(error_msg)
         return {
-            "success": True,
-            "total_processed": 0,
-            "message": "No emails found to process",
-            "filters_applied": {
-                "start_date": start_date,
-                "end_date": end_date,
-                "from_email": from_email,
-                "unread_only": unread_only,
-                "search": search,
-                "email_type": email_type
-            }
+            "chunks_stored": 0,
+            "chunks_skipped": 0,
+            "success": False,
+            "error": error_msg
         }
+
+async def _process_email_type_in_batches(
+    ait_id: str,
+    email_type: str,
+    start_date: str,
+    end_date: str,
+    batch_size: int,
+    max_emails: Optional[int],
+    headers: Dict,
+    resume_token: Optional[str]
+) -> Dict:
+    """
+    Process emails of a specific type (received/sent) in batches.
+    """
+    stats = {
+        "emails_processed": 0,
+        "chunks_stored": 0,
+        "chunks_skipped": 0,
+        "batches_processed": 0,
+        "errors": []
+    }
+    
+    filters = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "email_type": email_type,
+        "top": min(batch_size, MAX_EMAILS_PER_REQUEST),
+        "orderby": "sentDateTime desc" if email_type == "sent" else "receivedDateTime desc"
+    }
+    
+    current_url = resume_token if resume_token else build_graph_url(filters)
+    
+    while current_url and (not max_emails or stats["emails_processed"] < max_emails):
+        try:
+            response, error_response = await make_graph_request(current_url, headers, ait_id)
+            if error_response:
+                stats["errors"].append(f"API request failed: {error_response}")
+                break
+            
+            data = response.json()
+            result, error_response = process_graph_response(data, filters, b_sanitize=False)
+            if error_response:
+                stats["errors"].append(f"Response processing failed: {error_response}")
+                break
+            
+            messages = result["messages"]
+            if not messages:
+                logging.info(f"No more {email_type} emails to process")
+                break
+            
+            if max_emails and stats["emails_processed"] + len(messages) > max_emails:
+                remaining = max_emails - stats["emails_processed"]
+                messages = messages[:remaining]
+            
+            batch_result = await _process_email_batch(messages, ait_id)
+            
+            stats["emails_processed"] += len(messages)
+            stats["chunks_stored"] += batch_result["chunks_stored"]
+            stats["chunks_skipped"] += batch_result["chunks_skipped"]
+            stats["batches_processed"] += 1
+            
+            logging.info(f"Processed batch {stats['batches_processed']} of {email_type} emails: {len(messages)} emails, {batch_result['chunks_stored']} chunks stored")
+            
+            current_url = result.get("next_link")
+            
+            if current_url:
+                await asyncio.sleep(DELAY_BETWEEN_BATCHES)
+            
+        except Exception as e:
+            error_msg = f"Error processing {email_type} batch {stats['batches_processed'] + 1}: {str(e)}"
+            stats["errors"].append(error_msg)
+            logging.error(error_msg)
+            
+            continue
+    
+    return stats

@@ -3,9 +3,10 @@ from dotenv import load_dotenv
 from msal import ConfidentialClientApplication
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse
-from src.app.services.ms_exchange.mse_main import sync_emails as sync_email_data
+from src.app.services.ms_exchange.mse_main import sync_emails as sync_email_data, sync_all_emails, BATCH_SIZE
 from src.app.services.ms_exchange.mse_token_store import save_token
 from src.app.models.mse_email_models import EmailQueryParams, EmailCBQuery
+from typing import Optional, List, Dict, Tuple
 
 load_dotenv(override=True)
 
@@ -70,3 +71,30 @@ async def sync_emails(params: EmailQueryParams):
         next_url=params.next_url
     )
     return response
+
+@ms_router.post("/sync-all-emails")
+async def sync_all_emails_endpoint(
+    ait_id: str = Query(..., description="User authentication ID"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    batch_size: int = Query(BATCH_SIZE, ge=100, le=2000, description="Batch size for processing"),
+    max_emails: Optional[int] = Query(None, ge=1, description="Maximum emails to sync (for testing)"),
+    resume_token: Optional[str] = Query(None, description="Resume token for continuing previous sync")
+):
+    """
+    Sync all emails from Outlook to vector database.
+    Use this endpoint when a user logs in to get all existing emails.
+    """
+    result = await sync_all_emails(
+        ait_id=ait_id,
+        start_date=start_date,
+        end_date=end_date,
+        batch_size=batch_size,
+        max_emails=max_emails,
+        resume_token=resume_token
+    )
+    
+    if result.get("success"):
+        return JSONResponse(content=result, status_code=200)
+    else:
+        return JSONResponse(content=result, status_code=result.get("status_code", 500))
