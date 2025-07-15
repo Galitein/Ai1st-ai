@@ -242,9 +242,6 @@ Email Content:
                 "is_read": email_metadata.get("is_read", False),
                 "message_id": email_metadata.get("message_id", ""),
                 "conversation_id": email_metadata.get("conversation_id", ""),
-                "sync_timestamp": email_metadata.get("sync_timestamp", "").isoformat() if isinstance(email_metadata.get("sync_timestamp"), datetime) else str(email_metadata.get("sync_timestamp", "")),
-                "modified_time": email_metadata.get("last_modified_datetime", "").isoformat() if isinstance(email_metadata.get("last_modified_datetime"), datetime) else str(email_metadata.get("last_modified_datetime", "")),
-                # Following your exact pattern: document_collection_file_name_chunk_index
                 "source_id": f"email_{sender_address}_{sent_datetime}_{chunk_index}"
             }
             
