@@ -8,6 +8,7 @@ nltk.download('punkt')
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain.indexes import index
+from langchain_core.documents import Document
 
 from src.database.sql_record_manager import sql_record_manager
 from src.database.qdrant_service import QdrantService
@@ -27,7 +28,7 @@ logging.basicConfig(
     ]
 )
 
-def process_and_build_index(ait_id, documents):
+async def process_and_build_index(ait_id, documents):
     """
     Incrementally indexes files using Qdrant and tracks file states using SQLRecordManager.
 
@@ -39,17 +40,22 @@ def process_and_build_index(ait_id, documents):
         dict: Status and result of the indexing process.
     """
     try:
+        if documents and isinstance(documents[0], dict):
+            documents = [
+                Document(page_content=doc["page_content"], metadata=doc["metadata"])
+                for doc in documents
+            ]
         embedding = SentenceTransformerEmbeddings(model_name=MODEL_NAME)
-
+        logging.info("Connecting to Qdrant")
         qdrant_client = QdrantService(host=QDRANT_HOST, port=QDRANT_PORT)
-        if not qdrant_client.sync_client.collection_exists(collection_name=ait_id):
-            qdrant_client.sync_client.create_collection(
+        if not await qdrant_client.collection_exists(collection_name=ait_id):
+            await qdrant_client.create_collection(
                 collection_name=ait_id
             )
         vectorstore = QdrantVectorStore(
             client=qdrant_client.sync_client,
             collection_name=ait_id,
-            embedding=embedding,
+            embedding=embedding
         )
         
         # Set up SQLRecordManager for tracking

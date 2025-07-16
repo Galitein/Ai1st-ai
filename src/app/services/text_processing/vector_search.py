@@ -45,7 +45,7 @@ async def search(ait_id, query, document_collection, limit=10, similarity_thresh
         document_collection=document_collection,
         query_vector=query_vector,
         ait_id=ait_id,
-        limit=limit,
+        limit=limit
     )
     filtered_results = []
     for hit in search_result:

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import logging
 import httpx
 from src.app.services.trello_service.trello_data_loader import load_trello_documents
+from src.app.services.text_processing import create_embeddings
 
 load_dotenv(override=True)
 
@@ -23,6 +24,7 @@ async def trello_data_sync(ait_id: str) -> dict:
             }
         documents = document_response.get("data", [])
         logging.info(f"Loaded {len(documents)} Trello documents for indexing.")
+        
         if not documents:
             logging.info("No documents found to index.")
             return {
@@ -30,30 +32,39 @@ async def trello_data_sync(ait_id: str) -> dict:
                 "message": "No documents found to index.",
                 "index_result": None
             }
+        # Convert Document objects to dicts
+        document_dicts = [
+                {"page_content": doc.page_content, "metadata": doc.metadata}
+                for doc in documents
+            ] if isinstance(documents, list) else []
+        logging.info(f"Preparing to index {len(document_dicts)} documents for AIT ID: {ait_id}")
+        logging.info(f"Document dicts: {document_dicts}")  # Log first two for debugging
         async with httpx.AsyncClient() as client:
             try:
                 create_embedding_response = await client.post(
                     f"{BACKEND_API_URL}/create_embeddings",
                     json={
                         "ait_id": ait_id,
-                        "documents": documents,
+                        "documents": document_dicts,
                     }
                 )
-                if create_embedding_response.status_code == 200:
-                    trello_data = create_embedding_response.json()
-                    logging.info(f"Indexed results: {trello_data.get('index_result')} for ait_id: {ait_id}")
-                    return {
-                        "status": True,
-                        "message": "Documents indexed successfully.",
-                        "index_result": trello_data.get("index_result")
-                    }
-                else:
-                    logging.warning(f"Indexing failed: {create_embedding_response.text}")
+                response_data = create_embedding_response.json()
+                if not response_data.get('status', False):
+                    logging.error(f"Indexing failed {response_data.get('message', 'Unknown error')}")
                     return {
                         "status": False,
-                        "message": f"Indexing failed: {create_embedding_response.text}",
+                        "message": f"Indexing failed: {response_data.get('message', 'Unknown error')}",
                         "index_result": None
                     }
+                logging.info(f"Indexing response: {response_data}")
+                trello_data = response_data.get("index_result")
+                logging.info(f"Indexed results: {trello_data.get('index_result')} for ait_id: {ait_id}")
+                return {
+                    "status": True,
+                    "message": "Documents indexed successfully.",
+                    "index_result": trello_data.get("index_result")
+                }
+                    
             except Exception as e:
                 logging.error(f"Exception during indexing: {e}")
                 return {

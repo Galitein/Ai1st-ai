@@ -35,19 +35,49 @@ from src.app.models.input_models import (
     QueryInput,
     TaskOrPromptInput,
     ChatInput,
-    CreateIndexingInput
+    CreateIndexingInput,
+    CreateUrlIndexingInput
 )
 
 router = APIRouter()
 
 CREDENTIALS_PATH = os.getenv("CREDENTIALS_PATH", "credentials.json")
 
-@router.get("/")
-async def root():
-    return {"message": "Welcome to the Uvicorn App"}
+# Remove this function
+# ---------------------------------
+import uuid
+from datetime import datetime
+from src.database.sql import AsyncMySQLDatabase
+db = AsyncMySQLDatabase()
+
+@router.post("/create_ait")
+async def insert_custom_gpt_row():
+    ait_id = str(uuid.uuid4())
+    custom_gpt_data = {
+        "id": ait_id,
+        "user_id": int(1),
+        "name": "USER_TESTING",
+        "sys": "",
+        "pre": "",
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    }
+    if not db.pool:
+        await db.create_pool()
+    insert_gpt_status = await db.insert("custom_gpts", custom_gpt_data)
+    if not insert_gpt_status:
+        return responses.JSONResponse(
+            status_code=500,
+            content={
+                "status": False,
+                "message": "Failed to insert custom GPT data"
+            }
+        )
+    return {"status": insert_gpt_status, "ait_id": ait_id}
+# ---------------------------------
 
 @router.post("/create_embeddings")
-async def build_index(
+async def create_embeddings_main(
     input_data: CreateIndexingInput
 ):
     """
@@ -77,16 +107,29 @@ async def build_index(
         )
 
 @router.post("/create_embeddings_urls")
-async def build_index_urls(
-    file_urls: List[str],
-    ait_id: str,
-    document_collection: str
-    ):
-    response = await create_embedding_urls.create_embedding_urls(
-        ait_id=ait_id, 
-        file_urls=file_urls,
-        document_collection=document_collection
-    )
+async def build_index_urls(input_data: CreateUrlIndexingInput):
+    try:
+        response = await create_embedding_urls.create_embedding_urls(
+            ait_id=input_data.ait_id, 
+            file_urls=input_data.file_urls,
+            document_collection=input_data.document_collection
+        )
+        if not response.get("status"):
+                return responses.JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": False,
+                        "message": response.get("message")
+                    }
+                )
+    except Exception as e:
+        return responses.JSONResponse(
+            status_code=500,
+            content={
+                "status": False,
+                "message": f"Error creating embeddings: {str(e)}"
+            }
+        )
     return response
 
 @router.post("/search")

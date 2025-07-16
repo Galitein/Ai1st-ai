@@ -1,5 +1,7 @@
 import io
 import os
+import requests
+import logging
 import tiktoken
 from datetime import datetime
 import tempfile
@@ -122,61 +124,127 @@ def load_content_drive_file(drive_service, folder_id, file_name, logger):
         logger.error(f"Error downloading file {file_name}: {e}")
         return None, None
 
-
-def load_content_local_file(file_path, logger):
+def load_content_url_file(file_url, logger):
     """
-    Loads a local file and processes it based on file type.
+    Loads a file from URL and processes it based on file type.
     """
     try:
-        file_mime_type, _ = mimetypes.guess_type(file_path)
-        modified_time = str(datetime.utcfromtimestamp(os.path.getmtime(file_path)))
-
-        # Open as binary for all file types
-        with open(file_path, 'rb') as file:
-            file_content = file.read()
-
-        # Text files
-        if file_mime_type == "text/plain" or file_path.endswith(('.txt', '.md', '.csv')):
-            page_content = file_content.decode('utf-8')  # Now this works because file_content is bytes
-            content_chunks = chunk_text(page_content.replace('\n', ' '), max_tokens=200, overlap=20)
+        logger.info(f"Starting download from URL: {file_url}")
+        file_response = requests.get(file_url, stream=True)
+        
+        if file_response.status_code != 200:
+            logger.error(f"Failed to download file from {file_url}: {file_response.status_code}")
             return {
-                "content_chunks": content_chunks,
-                "modified_time": modified_time,
-                "file_type": "text"
+                "status": False,
+                "message": f"Failed to download file from {file_url}: {file_response.status_code}"
             }
+        
+        file_type = file_response.headers.get('content-type')
+        total_file_size = int(file_response.headers.get('content-length', 0))
+        downloaded_size = 0
+        
+        logger.info(f"File type: {file_type}, Size: {total_file_size} bytes")
+        
+        # Text files
+        if file_type == "text/plain" or file_url.endswith(('.txt')):
+            try:
+                logger.info("Processing text file")
+                page_content = file_response.text
+                content_chunks = chunk_text(page_content.replace('\n', ' '), max_tokens=200, overlap=20)
+                logger.info(f"Successfully processed text file with {len(content_chunks)} chunks")
+                return {
+                    "status": True,
+                    "content_chunks": content_chunks,
+                    "modified_time": file_response.headers.get('last-modified', str(datetime.utcnow())),
+                    "file_type": "text",
+                }
+            except Exception as e:
+                logger.error(f"Error processing text file: {e}")
+                return {
+                    "status": False,
+                    "message": f"Error processing text file: {e}",
+                }
 
         # Image files
-        elif file_mime_type in ["image/jpeg", "image/png"] or file_path.endswith(('.jpg', '.jpeg', '.png')):
-            suffix = ".jpg" if file_path.endswith(('.jpg', '.jpeg')) else ".png"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_img:
-                tmp_img.write(file_content)
-                tmp_img_path = tmp_img.name
-            page_content = image_to_text(tmp_img_path)
-            content_chunks = chunk_text(page_content.replace('\n', ' '), max_tokens=200, overlap=20)
-            return {
-                "content_chunks": content_chunks,
-                "modified_time": modified_time,
-                "file_type": "image"
-            }
+        elif file_type in ["image/jpeg", "image/png"] or file_url.endswith(('.jpg', '.jpeg', '.png')):
+            try:
+                logger.info("Processing image file")
+                suffix = ".jpg" if file_url.endswith(('.jpg', '.jpeg')) else ".png"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_img:
+                    for chunk in file_response.iter_content(chunk_size=8192):
+                        tmp_img.write(chunk)
+                        downloaded_size += len(chunk)
+                        if total_file_size > 0:
+                            progress = (downloaded_size / total_file_size) * 100
+                            logger.debug(f"Download progress: {progress:.1f}% for {tmp_img.name}")
+                    tmp_img_path = tmp_img.name
+                
+                logger.info(f"Image downloaded to temporary file: {tmp_img_path}")
+                page_content = image_to_text(tmp_img_path)
+                logger.info("Successfully extracted text from image")
+                
+                return {
+                    "status": True,
+                    "content_chunks": [page_content],
+                    "modified_time": file_response.headers.get('last-modified', str(datetime.utcnow())),
+                    "file_type": "image"                }
+            except Exception as e:
+                logger.error(f"Error processing image file: {e}")
+                return {
+                    "status": False,
+                    "message": f"Error processing image file: {e}"
+                }
 
         # Audio files
-        elif file_mime_type in ["audio/x-wav", "audio/mpeg"] or file_path.endswith(('.wav', '.mp3')):
-            suffix = ".wav" if file_path.endswith('.wav') else ".mp3"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_audio:
-                tmp_audio.write(file_content)
-                tmp_audio_path = tmp_audio.name
-            page_content = audio_to_text(tmp_audio_path)
-            content_chunks = chunk_text(page_content.replace('\n', ' '), max_tokens=200, overlap=20)
-            return {
-                "content_chunks": content_chunks,
-                "modified_time": modified_time,
-                "file_type": "audio"
-            }
+        elif file_type in ["audio/x-wav", "audio/mpeg"] or file_url.endswith(('.wav', '.mp3')):
+            try:
+                logger.info("Processing audio file")
+                suffix = ".wav" if file_url.endswith('.wav') else ".mp3"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_audio:
+                    for chunk in file_response.iter_content(chunk_size=8192):
+                        tmp_audio.write(chunk)
+                        downloaded_size += len(chunk)
+                        if total_file_size > 0:
+                            progress = (downloaded_size / total_file_size) * 100
+                            logger.debug(f"Download progress: {progress:.1f}% for {tmp_audio.name}")
+                    tmp_audio_path = tmp_audio.name
+                
+                logger.info(f"Audio downloaded to temporary file: {tmp_audio_path}")
+                page_content = audio_to_text(tmp_audio_path)
+                logger.info("Successfully extracted text from audio")
+                
+                return {
+                    "status": True,
+                    "content_chunks": [page_content],
+                    "modified_time": file_response.headers.get('last-modified', str(datetime.utcnow())),
+                    "file_type": "audio"
+                }
+            except Exception as e:
+                logger.error(f"Error processing audio file: {e}")
+                return {
+                    "status": False,
+                    "message": f"Error processing audio file: {e}"
+                }
 
         else:
-            logger.warning("Unsupported file type: %s", file_mime_type)
-            return None
+            logger.warning(f"Unsupported file type: {file_type}")
+            return {
+                "status": False,
+                "message": f"Unsupported file type: {file_type}",
+                "content_chunks": None,
+                "modified_time": None,
+                "file_type": file_type
+            }
 
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error downloading file from {file_url}: {e}")
+        return {
+            "status": False,
+            "message": f"Network error: {e}"
+        }
     except Exception as e:
-        logger.error(f"Error loading local file {file_path}: {e}")
-        return None
+        logger.error(f"Unexpected error loading file from {file_url}: {e}")
+        return {
+            "status": False,
+            "message": f"Unexpected error: {e}"
+        }

@@ -24,7 +24,7 @@ db = AsyncMySQLDatabase(
     database=DB_NAME
 )
 
-async def create_embedding_urls(ait_id:str, file_urls:str, document_collection:list) -> dict:
+async def create_embedding_urls(ait_id:str, file_urls:list, document_collection:str) -> dict:
     try:
         await db.create_pool()
     except Exception as e:
@@ -37,19 +37,24 @@ async def create_embedding_urls(ait_id:str, file_urls:str, document_collection:l
                 logging.error("File URL cannot be empty")
                 return {"status": False, "message": "File URL cannot be empty"}
 
-            # TODO: Implement the extraction function "extract_documents_from_url(file_url)" as needed
-            documents = await url_file_loader.load_url_documents(file_url, document_collection)
-            # documents = []
+            documents = await url_file_loader.load_url_documents(
+                file_url, ait_id, document_collection, logging
+            )
             file_name = file_url.split("/")[-1]  # Simple extraction from URL
 
             index_response = None
+            document_dicts = [
+                {"page_content": doc.page_content, "metadata": doc.metadata}
+                for doc in documents["documents"]
+            ] if isinstance(documents, dict) and "documents" in documents else []
+            logging.info(f"Preparing to index {document_dicts} documents for AIT ID: {ait_id}")
             try:
                 async with httpx.AsyncClient() as client:
                     create_embedding_response = await client.post(
                         f"{BACKEND_API_URL}/create_embeddings",
                         json={
                             "ait_id": ait_id,
-                            "documents": documents,
+                            "documents": document_dicts,
                         }
                     )
                     if create_embedding_response.status_code == 200:
@@ -64,16 +69,13 @@ async def create_embedding_urls(ait_id:str, file_urls:str, document_collection:l
                         logging.warning(f"Indexing failed: {create_embedding_response.text}")
                         index_response = {
                             "status": False,
-                            "message": f"Indexing failed: {create_embedding_response.text}",
-                            "index_result": None
+                            "message": f"Indexing failed: {create_embedding_response.text}"
                         }
             except Exception as e:
                 logging.error(f"Exception during indexing: {e}")
                 index_response = {
                     "status": False,
-                    "message": f"Exception during indexing: {str(e)}",
-                    "index_result": None
-                }
+                    "message": f"Exception during indexing: {str(e)}"                }
 
             if not index_response or not index_response.get("status"):
                 logging.error(f"Indexing failed for {file_url}: {index_response.get('message') if index_response else 'Unknown error'}")
