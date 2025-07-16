@@ -255,44 +255,65 @@ async def make_graph_request(url: str, headers: dict, ait_id: str):
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            logging.info(f"Attempt {attempt + 1} of {max_retries}")
             response = requests.get(url, headers=headers, timeout=30)
-            
+            logging.info(f"Response received with status code: {response.status_code}")
+
             if response.status_code == 200:
+                logging.info(f"Successful response: {response.json()}")
                 return response, None
+
             elif response.status_code == 401:
+                logging.warning("Received 401 Unauthorized. Attempting token refresh...")
                 new_access_token = await refresh_access_token(ait_id)
                 headers = build_headers(new_access_token)
+                logging.info(f"Refreshed token. New headers: {headers}")
                 continue
+
             elif response.status_code == 403:
+                logging.error("Received 403 Forbidden. Insufficient permissions.")
                 return None, JSONResponse({"error": "Insufficient permissions to access emails."}, status_code=403)
+
             elif response.status_code == 429:
+                logging.warning("Received 429 Too Many Requests. Retrying after delay...")
                 if attempt < max_retries - 1:
                     import time
-                    time.sleep(2 ** attempt)
+                    delay = 2 ** attempt
+                    logging.info(f"Sleeping for {delay} seconds before retry")
+                    time.sleep(delay)
                     continue
                 return None, JSONResponse({"error": "Rate limit exceeded. Please try again later."}, status_code=429)
+
             elif response.status_code >= 500:
+                logging.warning(f"Received {response.status_code} Server Error. Retrying...")
                 if attempt < max_retries - 1:
                     import time
                     time.sleep(1)
                     continue
                 return None, JSONResponse({"error": "Microsoft Graph service temporarily unavailable."}, status_code=503)
+
             else:
+                logging.error(f"Unhandled error. Status: {response.status_code}, Body: {response.text[:500]}")
                 return None, JSONResponse({
                     "error": f"API request failed with status {response.status_code}",
                     "details": response.text[:500]
                 }, status_code=response.status_code)
-                
+
         except requests.exceptions.Timeout:
+            logging.warning("Request timed out.")
             if attempt < max_retries - 1:
                 continue
             return None, JSONResponse({"error": "Request timeout. Please try again."}, status_code=408)
+
         except requests.exceptions.RequestException as e:
+            logging.error(f"RequestException occurred: {str(e)}")
             if attempt < max_retries - 1:
                 continue
             return None, JSONResponse({"error": f"Network error: {str(e)}"}, status_code=500)
-    
+
+    logging.critical("Max retries exceeded. Giving up.")
     return None, JSONResponse({"error": "Max retries exceeded."}, status_code=500)
+
 
 def process_graph_response(response_data: dict, filters: dict, b_sanitize: bool = True) -> dict:
     if "error" in response_data:

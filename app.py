@@ -9,7 +9,7 @@ app = FastAPI()
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://176.9.77.25"],
+    allow_origins=["http://176.9.77.25","https://ai2osbackend.nexuslink.co.in","http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

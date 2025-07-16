@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from msal import ConfidentialClientApplication
 from fastapi import APIRouter, Request, Depends, Query
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
 from src.app.services.ms_exchange.mse_main import sync_emails as sync_email_data, sync_all_emails, BATCH_SIZE
 from src.app.services.ms_exchange.mse_token_store import save_token
 from src.app.models.mse_email_models import EmailQueryParams, EmailCBQuery
@@ -50,9 +50,26 @@ async def callback(request: Request):
         redirect_uri=REDIRECT_URI
     )
     if "access_token" in result:
-        await save_token(state, result) 
-        return JSONResponse({"message": "Login successful, you can close this window"})
+        await save_token(state, result)
+        html_content = """
+        <html>
+            <head>
+                <title>Login Successful</title>
+                <script>
+                    setTimeout(function() {
+                        window.close();
+                    }, 3000);
+                </script>
+            </head>
+            <body>
+                <p>Login successful. This window will be closed</p>
+            </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
+    
     return JSONResponse({"error": result.get("error_description")})
+
 
 @ms_router.post("/email/sync_new_emails")
 async def sync_emails(params: EmailQueryParams):

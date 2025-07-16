@@ -5,7 +5,7 @@ import logging
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 
-load_dotenv()
+load_dotenv(override= True)
 from langchain_core.documents import Document
 
 from src.app.utils.trello_utils import (
@@ -19,6 +19,8 @@ from src.app.utils.trello_utils import (
 )
 
 from src.app.services.trello_service import trello_auth 
+
+trello_api = os.getenv("TRELLO_API_KEY", None)
 
 async def load_trello_log(ait_id, document_collection, trello_board_documents,trello_api, user_token):
     """
