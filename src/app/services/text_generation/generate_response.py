@@ -100,7 +100,7 @@ async def generate_chat_completion(ait_id:str, query:str):
             query=query,
             document_collection="log_mse_email",
             limit=8,
-            similarity_threshold=0.3
+            similarity_threshold=0.1
             )
 
         bib_log_context_results = extracted_bib.get("results", []) + extracted_log.get("results", [])
