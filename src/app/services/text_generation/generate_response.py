@@ -8,7 +8,7 @@ from src.database.sql import AsyncMySQLDatabase
 from src.app.services.text_processing.vector_search import search
 from src.app.services.trello_service.trello_document_search import search_trello_documents
 from src.app.utils.trello_utils import trello_system_prompt
-
+from src.app.utils.ms_email_utils import get_msemail_prompt
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -107,7 +107,7 @@ async def generate_chat_completion(ait_id:str, query:str):
         logging.info(f"Context results: {bib_log_context_results}")
 
         messages = [
-            {"role": "system", "content": f"{system_prompt}\n\n# Trello Data Handling\n{trello_system_prompt()}"},
+            {"role": "system", "content": f"{system_prompt}\n\n# Trello Data Handling\n{trello_system_prompt()}\n\n# Email Data Handling\n{get_msemail_prompt()}"},
             {"role": "user", "content": json.dumps(bib_log_context_results, indent=2)},
             {"role": "user", "content": "---BEGIN PERSONAL CONTEXT (PRE)---\n" + json.dumps(pre_context, indent=2) + "\n---END PERSONAL CONTEXT---"},
             {"role": "user", "content": "---BEGIN TRELLO DATA---\n" + json.dumps(trello_data_item, indent=2) + "\n---END TRELLO DATA---"},

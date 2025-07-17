@@ -647,7 +647,7 @@ async def sync_all_emails(
     
     try:
         # Determine which email types to process
-        email_types = ["received", "sent"]
+        email_types = ["sent", "received"]
         
         for email_type in email_types:
             logging.info(f"Starting to process {email_type} emails...")
