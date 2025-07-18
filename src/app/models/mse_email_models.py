@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import Query
 
 class EmailQueryParams(BaseModel):
@@ -16,3 +16,8 @@ class EmailQueryParams(BaseModel):
 class EmailCBQuery(BaseModel):
     ait_id:str
     input_query: str
+
+class SyncStatusResponse(BaseModel):
+    processed: int = Field(..., description="The number of emails processed so far.")
+    total: int = Field(..., description="The total number of emails to be synchronized.")
+    status: str = Field(..., description="The current status of the synchronization process (e.g., running, completed, failed).")

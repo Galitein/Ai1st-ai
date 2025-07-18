@@ -13,8 +13,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Query
 from fastapi.responses import JSONResponse
 from src.app.services.ms_exchange.mse_token_store import get_token, refresh_access_token
-from src.database.sql_record_manager import sql_record_manager
+from src.database.sql import AsyncMySQLDatabase
 from src.app.services.text_processing.create_embeddings import process_and_build_index
+
+mysql_db = AsyncMySQLDatabase()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -262,14 +264,12 @@ async def make_graph_request(url: str, headers: dict, ait_id: str):
             logging.info(f"Response received with status code: {response.status_code}")
 
             if response.status_code == 200:
-                logging.info(f"Successful response: {response.json()}")
                 return response, None
 
             elif response.status_code == 401:
                 logging.warning("Received 401 Unauthorized. Attempting token refresh...")
                 new_access_token = await refresh_access_token(ait_id)
                 headers = build_headers(new_access_token)
-                logging.info(f"Refreshed token. New headers: {headers}")
                 continue
 
             elif response.status_code == 403:
@@ -597,8 +597,38 @@ async def sync_emails(
     }
 
 
+async def get_all_folders(ait_id):
+    # Microsoft Graph API endpoint for root folders
+    known_folders = {"Deleted Items","Drafts","Archive","Junk Email","Outbox","Clutter","Conversation History"}
+    access_token = await get_token(ait_id = ait_id)
+
+    url = 'https://graph.microsoft.com/v1.0/me/mailFolders?$select=displayName,totalItemCount,childFolderCount'
+
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+    total_emails = 0
+    while url:
+        # response = requests.get(url, headers=headers)
+        response, error_response = await make_graph_request(url, headers, ait_id)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch folders: {response.text}")
+        
+        data = response.json()
+        for folder in data.get('value', []):
+            if folder.get("displayName") not in known_folders   :
+                total_emails += folder.get('totalItemCount', 0)
+
+        # Handle pagination if more folders exist
+        url = data.get('@odata.nextLink')
+
+    return total_emails
+
 async def sync_all_emails(
     ait_id: str,
+    progress_id : str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     batch_size: int = BATCH_SIZE,
@@ -608,6 +638,27 @@ async def sync_all_emails(
 ) -> Dict:
     """Sync all emails with proper pagination handling for both received and sent emails."""
     start_time = time.time()
+       
+    try:
+        total_email_count = await get_all_folders(ait_id)
+        
+        processing_data = {
+            'progress_id': progress_id,
+            'custom_gpt_id': ait_id,
+            'total': total_email_count,
+            'processed': 0,
+            'status': 'running',
+            'meta': json.dumps({'start_time': str(datetime.utcnow())}),
+            'remarks': 'Starting email synchronization'
+        }
+        await mysql_db.create_pool()
+        await mysql_db.insert('processing_status', processing_data)
+        await mysql_db.close_pool()
+        
+    except Exception as e:
+        logging.error(f"Failed to create initial processing status in DB: {e}")
+        # Optionally return an error if DB operations are critical
+        return {"error": "Failed to initialize processing in database.", "status_code": 500}
     
     token_data = await get_token(ait_id)
     if not token_data:
@@ -737,6 +788,17 @@ async def sync_all_emails(
                         total_stats["next_resume_token"] = None
                         logging.info(f"Completed all pages for {email_type} emails")
                     
+                    try:
+                        update_data = {
+                            'processed': total_stats["total_emails_processed"],
+                            'meta': json.dumps({'next_resume_token': total_stats["next_resume_token"], 'errors': total_stats["errors"]})
+                        }
+                        await mysql_db.create_pool()
+                        await mysql_db.update('processing_status', update_data, 'progress_id = %s', (progress_id,))
+                        await mysql_db.close_pool()
+                    except Exception as e:
+                        logging.error(f"Failed to update processing status in DB: {e}")
+
                     # Check if we've reached max emails
                     if max_emails and total_stats["total_emails_processed"] >= max_emails:
                         logging.info(f"Reached max_emails limit: {max_emails}")
@@ -769,12 +831,27 @@ async def sync_all_emails(
     total_stats["processing_time"] = time.time() - start_time
     
     success = len(total_stats["errors"]) == 0
+    final_status = 'completed' if success else 'failed'
     
+    try:
+        final_update = {
+            'processed': total_stats["total_emails_processed"],
+            'status': final_status,
+            'meta': json.dumps({'next_resume_token': total_stats["next_resume_token"], 'errors': total_stats["errors"], 'final_stats': total_stats}),
+            'remarks': 'Synchronization completed' if success else 'Synchronization failed'
+        }
+        await mysql_db.create_pool()
+        await mysql_db.update('processing_status', final_update, 'progress_id = %s', (progress_id,))
+        await mysql_db.close_pool()
+    except Exception as e:
+        logging.error(f"Failed to set final processing status in DB: {e}")
+
     result = {
         "success": success,
         "message": "Email sync completed successfully" if success else "Email sync completed with errors",
         "statistics": total_stats,
-        "date_range": {"start_date": start_date, "end_date": end_date}
+        "date_range": {"start_date": start_date, "end_date": end_date},
+        "progress_id": progress_id
     }
     
     if not success:

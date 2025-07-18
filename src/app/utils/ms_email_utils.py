@@ -1,4 +1,7 @@
+from src.database.sql import AsyncMySQLDatabase
+from fastapi import HTTPException
 
+mysql_db = AsyncMySQLDatabase()
 
 def get_msemail_prompt():
     return """
@@ -42,3 +45,30 @@ Query Scope: Respond only to what can be determined from the email data received
 Confidentiality: Handle all email content with discretion and professionalism
 
 """
+
+async def get_processing_metadata(processing_id):
+    try:
+        await mysql_db.create_pool()
+        record = await mysql_db.select_one(
+            table="processing_status",
+            columns="processed, total, status",
+            where="progress_id = %s",
+            params=(processing_id,)
+        )
+        await mysql_db.close_pool()
+
+        if not record:
+            
+            raise HTTPException(
+                status_code=404,
+                detail=f"Processing status with ID '{processing_id}' not found."
+            )
+        return record
+
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred while retrieving the sync status."
+        )

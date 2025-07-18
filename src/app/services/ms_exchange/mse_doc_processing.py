@@ -290,7 +290,7 @@ async def load_email_documents(
             
             if documents:
                 all_documents.extend(documents)
-                logger.info(f"Created {len(documents)} document chunks for email: {email_metadata.get('subject', 'No Subject')[:50]}...")
+                # logger.info(f"Created {len(documents)} document chunks for email: {email_metadata.get('subject', 'No Subject')[:50]}...")
             else:
                 logger.warning(f"No chunks created for email: {email_metadata.get('subject', 'No Subject')[:50]}...")
                 

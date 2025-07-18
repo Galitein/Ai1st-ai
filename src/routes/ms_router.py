@@ -1,12 +1,18 @@
 import os
+import json
+import uuid
 from dotenv import load_dotenv
+from datetime import datetime
 from msal import ConfidentialClientApplication
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import Path, BackgroundTasks, HTTPException, status, APIRouter, Request, Depends, Query
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
-from src.app.services.ms_exchange.mse_main import sync_emails as sync_email_data, sync_all_emails, BATCH_SIZE
+from src.app.services.ms_exchange.mse_main import sync_emails as sync_email_data, sync_all_emails, BATCH_SIZE, get_all_folders
 from src.app.services.ms_exchange.mse_token_store import save_token
-from src.app.models.mse_email_models import EmailQueryParams, EmailCBQuery
+from src.app.models.mse_email_models import EmailQueryParams, EmailCBQuery, SyncStatusResponse
 from typing import Optional, List, Dict, Tuple
+from src.app.utils.ms_email_utils import get_processing_metadata
+from src.database.sql import AsyncMySQLDatabase
+mysql_db = AsyncMySQLDatabase()
 
 load_dotenv(override=True)
 
@@ -77,41 +83,56 @@ async def sync_emails(params: EmailQueryParams):
     Sync emails to MySQL and create vector embeddings in Qdrant with proper chunking.
     """
     response = await sync_email_data(
-        ait_id=params.ait_id #,
-        # start_date=params.start_date,
-        # end_date=params.end_date,
-        # from_email=params.from_email,
-        # unread_only=params.unread_only,
-        # search=params.search,
-        # top=params.top,
-        # orderby=params.orderby,
-        # next_url=params.next_url
+        ait_id=params.ait_id
     )
     return response
 
 @ms_router.post("/sync-all-emails")
 async def sync_all_emails_endpoint(
-    ait_id: str = Query(..., description="User authentication ID"),
-    # start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    # end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    # batch_size: int = Query(BATCH_SIZE, ge=100, le=2000, description="Batch size for processing"),
-    # max_emails: Optional[int] = Query(None, ge=1, description="Maximum emails to sync (for testing)"),
-    # resume_token: Optional[str] = Query(None, description="Resume token for continuing previous sync")
+    background_tasks: BackgroundTasks,
+    input_data : EmailQueryParams = Query(..., description="User authentication ID")
 ):
     """
     Sync all emails from Outlook to vector database.
     Use this endpoint when a user logs in to get all existing emails.
     """
-    result = await sync_all_emails(
-        ait_id=ait_id #,
-        # start_date=start_date,
-        # end_date=end_date,
-        # batch_size=batch_size,
-        # max_emails=max_emails,
-        # resume_token=resume_token
-    )
-    
-    if result.get("success"):
-        return JSONResponse(content=result, status_code=200)
-    else:
-        return JSONResponse(content=result, status_code=result.get("status_code", 500))
+    progress_id = str(uuid.uuid4())
+    try:
+        # 1. Get the total number of emails to establish the 'total' for our progress bar.
+        total_email_count = await get_all_folders(input_data.ait_id)
+
+        print(f"here is the total email coutn : {total_email_count}")
+
+        initial_record = {
+            'progress_id': progress_id,
+            'custom_gpt_id': input_data.ait_id,
+            'total': total_email_count,
+            'processed': 0,
+            'status': 'pending',
+            'meta': json.dumps({'request_time': datetime.utcnow().isoformat()}),
+            'remarks': 'Synchronization has been queued and is waiting to start.'
+        }
+        await mysql_db.create_pool()
+        await mysql_db.insert('processing_status', initial_record)
+        await mysql_db.close_pool()
+
+        background_tasks.add_task(sync_all_emails, ait_id=input_data.ait_id, progress_id=progress_id)
+
+        return {"processing_id": progress_id}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not start the synchronization process. Error: {e}"
+        )
+
+@ms_router.get("/status/{processing_id}", response_model=SyncStatusResponse)
+async def get_sync_status(
+    processing_id: str = Path(..., title="Processing ID", description="The unique ID generated when the synchronization process started.")
+):
+    """
+    Retrieves the real-time synchronization status for a given processing ID.
+    """
+    response = await get_processing_metadata(processing_id)
+
+    return response
