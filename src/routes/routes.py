@@ -272,17 +272,24 @@ async def delete_index(input_data: FileNamesInput):
     except HTTPException as e:
         raise e
 
+import time
 @router.post("/chat")
 async def generate_query_response(input_data: ChatInput):
     """
     Generates a response based on the user's query using the system prompt.
     """
+    start_time = time.time()  # Start timing
+
     response = await generate_response.generate_chat_completion(
         input_data.ait_id, 
         input_data.query
     )
 
+    process_time = time.time() - start_time  # Calculate elapsed time
+
     if not response.get('status'):
         raise HTTPException(status_code=400, detail=response.get('message'))
     
+    # Add process_time to the response
+    response["process_time"] = process_time
     return response

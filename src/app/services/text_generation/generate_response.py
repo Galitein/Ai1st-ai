@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import time
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from src.database.sql import AsyncMySQLDatabase
@@ -40,7 +41,10 @@ async def generate_chat_completion(ait_id:str, query:str):
         dict: A dictionary containing the status and the generated response.
     """
     try:
+        total_start_time = time.time()
         logging.info("Starting chat completion generation.")
+        # Step 1: DB fetch
+        step_start = time.time()
         try:
             await db.create_pool()
             db_response = await db.select(table="custom_gpts", columns="*", where=f"id = '{ait_id}'", limit=1)
@@ -48,18 +52,24 @@ async def generate_chat_completion(ait_id:str, query:str):
         except Exception as e:
             logging.error(f"Database connection error: {str(e)}")
             return {'status': False, 'message': f"Database connection error: {str(e)}"}
+        step_end = time.time()
+        logging.info(f"DB fetch step took {step_end - step_start:.3f} seconds.")
 
+        # Step 2: SYS/PRE extraction
+        step_start = time.time()
         if not db_response or "sys" not in db_response[0]:
             logging.error(f"SYS not found for ait id : {ait_id}")
             return {'status': False, 'message': "SYS not defined or invalid ait id"}
         else:
             system_prompt = db_response[0].get("sys", "")
             pre_context = db_response[0].get("pre", "")
+        step_end = time.time()
+        logging.info(f"SYS/PRE extraction step took {step_end - step_start:.3f} seconds.")
 
-        
         logging.info("SYS and PRE loaded successfully.")
 
-        # Search in 'bib' collection
+        # Step 3: Search in 'bib' collection
+        step_start = time.time()
         extracted_bib = await search(
             ait_id=ait_id,
             query=query,
@@ -67,11 +77,14 @@ async def generate_chat_completion(ait_id:str, query:str):
             limit=10,
             similarity_threshold=0.3
         )
+        step_end = time.time()
+        logging.info(f"'bib' collection search step took {step_end - step_start:.3f} seconds.")
         if not extracted_bib.get("status"):
             logging.error(f"No results found for the query in 'bib' collection: {extracted_bib.get('message', '')}")
             return {'status': False, 'message': "No results found for the query in 'bib' collection."}
 
-        # Search in Trello log collection (fix collection name if needed)
+        # Step 4: Search in Trello log collection
+        step_start = time.time()
         # trello_log_collection = "log_diary"  # <-- Change this if your collection is named differently
         extracted_log = await search(
             ait_id=ait_id,
@@ -80,21 +93,28 @@ async def generate_chat_completion(ait_id:str, query:str):
             limit=20,
             similarity_threshold=0.5
         )
+        step_end = time.time()
+        logging.info(f"'log_diary' collection search step took {step_end - step_start:.3f} seconds.")
         if not extracted_log.get("status"):
-            logging.error(f"No results found for the query in '{trello_log_collection}' collection: {extracted_log.get('message', '')}")
-            return {'status': False, 'message': f"No results found for the query in '{trello_log_collection}' collection."}
+            logging.error(f"No results found for the query in 'log_diary' collection: {extracted_log.get('message', '')}")
+            return {'status': False, 'message': f"No results found for the query in 'log_diary' collection."}
 
-        # Search Trello documents
+        # Step 5: Search Trello documents
+        step_start = time.time()
         try:
             extract_trello_data = await search_trello_documents(query, ait_id)
             logging.info(f"Extracted Trello data: {extract_trello_data}")
         except Exception as e:
             logging.error(f"Error searching Trello documents: {str(e)}")
             extract_trello_data = {}
+        step_end = time.time()
+        logging.info(f"Trello documents search step took {step_end - step_start:.3f} seconds.")
 
         trello_data_item = [v for k, v in extract_trello_data.items()]
         logging.info(f"Trello data items: {trello_data_item}")
 
+        # Step 6: Search MSE email
+        step_start = time.time()
         extracted_mse_email = await search(
             ait_id=ait_id,
             query=query,
@@ -102,7 +122,11 @@ async def generate_chat_completion(ait_id:str, query:str):
             limit=8,
             similarity_threshold=0.1
             )
+        step_end = time.time()
+        logging.info(f"'log_mse_email' collection search step took {step_end - step_start:.3f} seconds.")
 
+        # Step 7: Prepare context/results
+        step_start = time.time()
         bib_log_context_results = extracted_bib.get("results", []) + extracted_log.get("results", [])
         logging.info(f"Context results: {bib_log_context_results}")
 
@@ -115,8 +139,11 @@ async def generate_chat_completion(ait_id:str, query:str):
             {"role": "user", "content": query}
         ]
         logging.info("Conversation history prepared.")
+        step_end = time.time()
+        logging.info(f"Context/results preparation step took {step_end - step_start:.3f} seconds.")
 
-        # Call OpenAI's ChatCompletion API asynchronously
+        # Step 8: Call OpenAI's ChatCompletion API asynchronously
+        step_start = time.time()
         logging.info("Calling OpenAI's ChatCompletion API.")
         response = await client.chat.completions.create(
             model="gpt-4.1",
@@ -124,11 +151,19 @@ async def generate_chat_completion(ait_id:str, query:str):
             temperature=0.3,
             max_tokens=5000
         )
+        step_end = time.time()
+        logging.info(f"OpenAI ChatCompletion API call step took {step_end - step_start:.3f} seconds.")
 
-        # Extract and return the generated response
+        # Step 9: Extract and return the generated response
+        step_start = time.time()
         chat_response = response.choices[0].message
         logging.info(chat_response)
         logging.info("Chat completion generated successfully.")
+        step_end = time.time()
+        logging.info(f"Response extraction step took {step_end - step_start:.3f} seconds.")
+
+        total_end_time = time.time()
+        logging.info(f"Total processing time: {total_end_time - total_start_time:.3f} seconds.")
         return {'status': True, 'message': chat_response}
 
     except Exception as e:
