@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Tuple
 from src.app.utils.ms_email_utils import get_processing_metadata
 from src.database.sql import AsyncMySQLDatabase
 mysql_db = AsyncMySQLDatabase()
+from src.app.utils.helpers import is_valid_ait_id
 
 load_dotenv(override=True)
 
@@ -36,7 +37,10 @@ msal_app = ConfidentialClientApplication(
 )
 
 @ms_router.get("/login")
-def login(ait_id: str = Query(...)):
+async def login(ait_id: str = Query(...)):
+    if not await is_valid_ait_id(ait_id):
+        raise HTTPException(status_code=400, detail="Invalid ait_id")
+    
     auth_url = msal_app.get_authorization_request_url(
         scopes=AUTH_SCOPES,
         redirect_uri=REDIRECT_URI,
@@ -49,6 +53,8 @@ def login(ait_id: str = Query(...)):
 async def callback(request: Request):
     code = request.query_params.get("code")
     state = request.query_params.get("state", DEFAULT_USER_ID)
+    if not await is_valid_ait_id(state):
+        raise HTTPException(status_code=400, detail="Invalid ait_id")
 
     result = msal_app.acquire_token_by_authorization_code(
         code,
@@ -82,6 +88,9 @@ async def sync_emails(params: EmailQueryParams):
     """
     Sync emails to MySQL and create vector embeddings in Qdrant with proper chunking.
     """
+    if not await is_valid_ait_id(params.ait_id):
+        raise HTTPException(status_code=400, detail="Invalid ait_id")
+
     response = await sync_email_data(
         ait_id=params.ait_id
     )
@@ -96,6 +105,9 @@ async def sync_all_emails_endpoint(
     Sync all emails from Outlook to vector database.
     Use this endpoint when a user logs in to get all existing emails.
     """
+    if not await is_valid_ait_id(input_data.ait_id):
+        raise HTTPException(status_code=400, detail="Invalid ait_id")
+
     progress_id = str(uuid.uuid4())
     try:
         # 1. Get the total number of emails to establish the 'total' for our progress bar.
@@ -128,11 +140,14 @@ async def sync_all_emails_endpoint(
 
 @ms_router.get("/status/{processing_id}", response_model=SyncStatusResponse)
 async def get_sync_status(
-    processing_id: str = Path(..., title="Processing ID", description="The unique ID generated when the synchronization process started.")
+    ait_id, processing_id: str = Path(..., title="Processing ID", description="The unique ID generated when the synchronization process started.")
 ):
     """
     Retrieves the real-time synchronization status for a given processing ID.
     """
+    if not processing_id or not await is_valid_ait_id(input_data.ait_id):
+        raise HTTPException(status_code=400, detail="Invalid ait_id")
+
     response = await get_processing_metadata(processing_id)
 
     return response

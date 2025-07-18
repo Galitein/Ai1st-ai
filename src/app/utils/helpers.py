@@ -5,8 +5,12 @@ from datetime import datetime
 import tempfile
 import mimetypes
 from googleapiclient.http import MediaIoBaseDownload
-
+import re
+from typing import Optional
 from src.app.utils.extractors import image_to_text, audio_to_text
+from src.database.sql import AsyncMySQLDatabase
+
+mysql_db = AsyncMySQLDatabase()
 
 
 def chunk_text(text, max_tokens=200, overlap=20, encoding_name="cl100k_base"):
@@ -180,3 +184,35 @@ def load_content_local_file(file_path, logger):
     except Exception as e:
         logger.error(f"Error loading local file {file_path}: {e}")
         return None
+
+
+
+async def is_valid_ait_id(ait_id: str) -> bool:
+    """
+    Check if ait_id is a valid 36-character UUID string and exists in the `custom_gpts` table.
+    
+    Parameters:
+        db (AsyncMySQLDatabase): An instance of your database class.
+        ait_id (str): The ID to validate.
+
+    Returns:
+        bool: True if valid and exists, False otherwise.
+    """
+
+    # Validate format: 36-char UUID-like (loose check)
+    if not re.fullmatch(r"[a-fA-F0-9\-]{36}", ait_id):
+        return False
+
+    try:        
+        await mysql_db.create_pool()
+        result = await mysql_db.select_one(
+            table="custom_gpts",
+            columns="id",
+            where="id = %s",
+            params=(ait_id,)
+        )
+        await mysql_db.close_pool()
+        return result is not None
+    except Exception as e:
+        logger.error(f"Error checking ait_id: {e}")
+        return False
