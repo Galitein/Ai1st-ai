@@ -77,38 +77,38 @@ async def sync_emails(params: EmailQueryParams):
     Sync emails to MySQL and create vector embeddings in Qdrant with proper chunking.
     """
     response = await sync_email_data(
-        ait_id=params.ait_id,
-        start_date=params.start_date,
-        end_date=params.end_date,
-        from_email=params.from_email,
-        unread_only=params.unread_only,
-        search=params.search,
-        top=params.top,
-        orderby=params.orderby,
-        next_url=params.next_url
+        ait_id=params.ait_id #,
+        # start_date=params.start_date,
+        # end_date=params.end_date,
+        # from_email=params.from_email,
+        # unread_only=params.unread_only,
+        # search=params.search,
+        # top=params.top,
+        # orderby=params.orderby,
+        # next_url=params.next_url
     )
     return response
 
 @ms_router.post("/sync-all-emails")
 async def sync_all_emails_endpoint(
     ait_id: str = Query(..., description="User authentication ID"),
-    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    batch_size: int = Query(BATCH_SIZE, ge=100, le=2000, description="Batch size for processing"),
-    max_emails: Optional[int] = Query(None, ge=1, description="Maximum emails to sync (for testing)"),
-    resume_token: Optional[str] = Query(None, description="Resume token for continuing previous sync")
+    # start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    # end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    # batch_size: int = Query(BATCH_SIZE, ge=100, le=2000, description="Batch size for processing"),
+    # max_emails: Optional[int] = Query(None, ge=1, description="Maximum emails to sync (for testing)"),
+    # resume_token: Optional[str] = Query(None, description="Resume token for continuing previous sync")
 ):
     """
     Sync all emails from Outlook to vector database.
     Use this endpoint when a user logs in to get all existing emails.
     """
     result = await sync_all_emails(
-        ait_id=ait_id,
-        start_date=start_date,
-        end_date=end_date,
-        batch_size=batch_size,
-        max_emails=max_emails,
-        resume_token=resume_token
+        ait_id=ait_id #,
+        # start_date=start_date,
+        # end_date=end_date,
+        # batch_size=batch_size,
+        # max_emails=max_emails,
+        # resume_token=resume_token
     )
     
     if result.get("success"):
