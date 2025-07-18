@@ -211,7 +211,9 @@ def build_graph_url(filters: dict) -> str:
         base_endpoint = "https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages"
         datetime_field = "sentDateTime"
     else:
-        base_endpoint = "https://graph.microsoft.com/v1.0/me/messages"
+        # MODIFICATION: Target the 'Inbox' folder specifically for 'received' emails
+        # to prevent fetching items from other folders like 'Sent Items'.
+        base_endpoint = "https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages"
         datetime_field = "receivedDateTime"
     
     if filters.get('search'):
@@ -592,14 +594,6 @@ async def sync_emails(
         "total_chunks_skipped": total_chunks_skipped,
         "email_types_processed": email_types_to_process,
         "message": f"Successfully processed all emails across all pages",
-        "filters_applied": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "from_email": from_email,
-            "unread_only": unread_only,
-            "search": search,
-            "email_type": email_type
-        }
     }
 
 
